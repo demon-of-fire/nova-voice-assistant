@@ -182,7 +182,8 @@ class Assistant:
         self.ui.root.after(0, self._show_type_dialog)
 
     def _show_type_dialog(self):
-        """Show a text input dialog so the user can type a message to Nova."""
+        """Show a text input dialog so the user can type a message to Nova.
+        Fully NVDA accessible — all widgets labeled and keyboard navigable."""
         import tkinter as tk
         from assistant.accessibility import announce
 
@@ -195,22 +196,28 @@ class Assistant:
         BTN_BG = "#2a2a4e" if dark else "#d0d0d0"
 
         win = tk.Toplevel(self.ui.root)
-        win.title("Type to Nova")
+        win.title("Type a message to Nova")
         win.attributes("-topmost", True)
         win.configure(bg=BG)
         win.resizable(False, False)
 
-        w, h = 500, 140
+        w, h = 500, 160
         sx = win.winfo_screenwidth() // 2 - w // 2
         sy = win.winfo_screenheight() // 2 - h // 2
         win.geometry(f"{w}x{h}+{sx}+{sy}")
 
-        tk.Label(win, text="Type your message:",
-                 font=("Segoe UI", 10), bg=BG, fg=FG).pack(pady=(12, 4), padx=16, anchor="w")
+        # Use a Button for the instruction so NVDA can read it
+        info_btn = tk.Button(win, text="Type your message below and press Enter to send",
+                             font=("Segoe UI", 10), bg=BG, fg=FG,
+                             activebackground=BG, activeforeground=FG,
+                             bd=0, takefocus=True, anchor="w", padx=16, pady=4)
+        info_btn.pack(fill="x", pady=(8, 2))
 
         entry = tk.Entry(win, font=("Segoe UI", 12), width=50,
-                         bg=ENTRY_BG, fg=FG, insertbackground=FG)
+                         bg=ENTRY_BG, fg=FG, insertbackground=FG, takefocus=True)
         entry.pack(padx=16, pady=(0, 8))
+        entry.bind("<FocusIn>",
+            lambda e: announce("Message field. Type your message and press Enter."), add="+")
 
         btn_row = tk.Frame(win, bg=BG)
         btn_row.pack()
@@ -220,33 +227,45 @@ class Assistant:
             if text:
                 win.destroy()
                 threading.Thread(target=self._process, args=(text,), daemon=True).start()
+            else:
+                announce("Please type a message first.")
+                entry.focus_set()
 
         def _cancel():
             win.destroy()
 
-        send_btn = tk.Button(btn_row, text="Send", font=("Segoe UI", 10, "bold"),
+        send_btn = tk.Button(btn_row, text="Send message", font=("Segoe UI", 10, "bold"),
                              bg="#2e7d32", fg="white", activebackground="#388e3c",
-                             padx=16, pady=3, command=_send)
+                             padx=16, pady=3, command=_send, takefocus=True)
         send_btn.pack(side="left", padx=6)
+        send_btn.bind("<Return>", lambda e: send_btn.invoke())
+        send_btn.bind("<FocusIn>",
+            lambda e: announce("Send message button. Press Enter to send."), add="+")
 
         cancel_btn = tk.Button(btn_row, text="Cancel", font=("Segoe UI", 10),
                                bg=BTN_BG, fg=FG, activebackground="#3a3a5e",
-                               padx=12, pady=3, command=_cancel)
+                               padx=12, pady=3, command=_cancel, takefocus=True)
         cancel_btn.pack(side="left", padx=6)
+        cancel_btn.bind("<Return>", lambda e: cancel_btn.invoke())
+        cancel_btn.bind("<FocusIn>",
+            lambda e: announce("Cancel button. Press Enter to close."), add="+")
 
-        entry.bind("<Tab>", lambda e: (send_btn.focus_set(), "break")[-1])
-        send_btn.bind("<Tab>", lambda e: (cancel_btn.focus_set(), "break")[-1])
-        cancel_btn.bind("<Tab>", lambda e: (entry.focus_set(), "break")[-1])
-        cancel_btn.bind("<Shift-Tab>", lambda e: (send_btn.focus_set(), "break")[-1])
-        send_btn.bind("<Shift-Tab>", lambda e: (entry.focus_set(), "break")[-1])
-        entry.bind("<Shift-Tab>", lambda e: (cancel_btn.focus_set(), "break")[-1])
+        focus_widgets = [info_btn, entry, send_btn, cancel_btn]
+        for i, widget in enumerate(focus_widgets):
+            nxt = focus_widgets[(i + 1) % len(focus_widgets)]
+            prv = focus_widgets[(i - 1) % len(focus_widgets)]
+            widget.bind("<Tab>", lambda e, w=nxt: (w.focus_set(), "break")[-1])
+            widget.bind("<Shift-Tab>", lambda e, w=prv: (w.focus_set(), "break")[-1])
 
         win.bind("<Return>", lambda e: _send())
         win.bind("<Escape>", lambda e: _cancel())
         win.protocol("WM_DELETE_WINDOW", _cancel)
 
-        entry.focus_set()
-        announce("Type your message to Nova. Press Enter to send.")
+        def _init():
+            entry.focus_set()
+            announce("Type your message to Nova. Press Enter to send, Escape to cancel.")
+
+        win.after(200, _init)
 
     def stop(self):
         self.listener.stop()
