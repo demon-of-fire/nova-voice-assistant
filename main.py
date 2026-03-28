@@ -70,66 +70,30 @@ def main():
 
 
 def _ask_api_key(settings):
-    """Accessible dark-mode dialog to collect the Gemini API key.
+    """Fully NVDA-accessible API key entry dialog.
 
-    Uses only plain tk.Button, tk.Entry, tk.Label — NVDA reads these.
-    Every interactive widget has a FocusIn announcement for screen readers.
+    Every piece of information is a focusable tk.Button with clear text
+    that NVDA reads aloud when you Tab to it.  No tk.Label — those render
+    as graphics and are invisible to screen readers.
     """
     import tkinter as tk
 
     BG = "#1a1a2e"
     FG = "#e0e0e0"
     ENTRY_BG = "#2a2a4e"
-    BTN_BG = "#3a3a5e"
 
     got_key = {"value": ""}
 
     root = tk.Tk()
-    root.title("Nova Setup — Enter Gemini API Key")
+    root.title("Nova — First Time Setup")
     root.configure(bg=BG)
     root.attributes("-topmost", True)
     root.resizable(False, False)
 
-    w, h = 500, 280
+    w, h = 560, 380
     sx = root.winfo_screenwidth() // 2 - w // 2
     sy = root.winfo_screenheight() // 2 - h // 2
     root.geometry(f"{w}x{h}+{sx}+{sy}")
-
-    tk.Label(root, text="Nova needs a Gemini API key to work.",
-             font=("Segoe UI", 13, "bold"), bg=BG, fg=FG).pack(pady=(20, 4))
-    tk.Label(root, text="Get a free key at: aistudio.google.com/apikey",
-             font=("Segoe UI", 10), bg=BG, fg="#8888bb").pack(pady=(0, 12))
-    tk.Label(root, text="Enter your Gemini API key:",
-             font=("Segoe UI", 10), bg=BG, fg=FG, anchor="w").pack(fill="x", padx=40)
-
-    key_entry = tk.Entry(root, font=("Segoe UI", 12), show="*", width=40,
-                         bg=ENTRY_BG, fg=FG, insertbackground=FG, takefocus=True)
-    key_entry.pack(padx=40, pady=(4, 16))
-
-    btn_row = tk.Frame(root, bg=BG)
-    btn_row.pack()
-
-    def _ok():
-        k = key_entry.get().strip()
-        if k:
-            got_key["value"] = k
-            root.destroy()
-        else:
-            _nvda_say("No key entered. Please type your API key.")
-            key_entry.focus_set()
-
-    def _cancel():
-        root.destroy()
-
-    ok_btn = tk.Button(btn_row, text="OK — Save API key", font=("Segoe UI", 11, "bold"),
-                       bg="#2e7d32", fg="white", activebackground="#388e3c",
-                       padx=24, pady=4, command=_ok, takefocus=True)
-    ok_btn.pack(side="left", padx=8)
-
-    cancel_btn = tk.Button(btn_row, text="Cancel — Exit Nova", font=("Segoe UI", 11),
-                           bg=BTN_BG, fg=FG, activebackground="#4a4a6e",
-                           padx=16, pady=4, command=_cancel, takefocus=True)
-    cancel_btn.pack(side="left", padx=8)
 
     # --- NVDA announcement helper ---
     def _nvda_say(msg):
@@ -139,19 +103,82 @@ def _ask_api_key(settings):
         except Exception:
             pass
 
-    # --- FocusIn announcements for NVDA ---
-    key_entry.bind("<FocusIn>",
-        lambda e: _nvda_say("API key entry field. Paste or type your Gemini API key here."), add="+")
-    ok_btn.bind("<FocusIn>",
-        lambda e: _nvda_say("OK button. Press Enter to save your API key and start Nova."), add="+")
-    cancel_btn.bind("<FocusIn>",
-        lambda e: _nvda_say("Cancel button. Press Enter to exit without saving."), add="+")
+    focus_order = []
 
-    # Tab order: entry -> OK -> Cancel -> entry
-    focus_widgets = [key_entry, ok_btn, cancel_btn]
-    for i, widget in enumerate(focus_widgets):
-        nxt = focus_widgets[(i + 1) % len(focus_widgets)]
-        prv = focus_widgets[(i - 1) % len(focus_widgets)]
+    # Step 1: Tell the user what this is
+    step1 = tk.Button(
+        root, text="Step 1: You need a free Gemini API key to use Nova",
+        font=("Segoe UI", 12, "bold"), takefocus=True,
+        bg=BG, fg=FG, activebackground=BG, activeforeground=FG,
+        bd=0, anchor="w", padx=16, pady=6)
+    step1.pack(fill="x", pady=(20, 0))
+    focus_order.append(step1)
+
+    # Step 2: Where to get the key
+    step2 = tk.Button(
+        root, text="Step 2: Go to aistudio.google.com/apikey to get your free key",
+        font=("Segoe UI", 11), takefocus=True,
+        bg=BG, fg="#8888cc", activebackground=BG, activeforeground="#8888cc",
+        bd=0, anchor="w", padx=16, pady=6)
+    step2.pack(fill="x")
+    focus_order.append(step2)
+
+    # Step 3: Paste it here
+    step3 = tk.Button(
+        root, text="Step 3: Paste your API key in the text field below and press Enter",
+        font=("Segoe UI", 11), takefocus=True,
+        bg=BG, fg=FG, activebackground=BG, activeforeground=FG,
+        bd=0, anchor="w", padx=16, pady=6)
+    step3.pack(fill="x", pady=(0, 8))
+    focus_order.append(step3)
+
+    # API key text field
+    key_entry = tk.Entry(root, font=("Segoe UI", 13), show="*", width=44,
+                         bg=ENTRY_BG, fg=FG, insertbackground=FG, takefocus=True)
+    key_entry.pack(padx=16, pady=(4, 20))
+    key_entry.bind("<FocusIn>",
+        lambda e: _nvda_say("API key text field. Paste or type your Gemini API key here, then press Enter."),
+        add="+")
+    focus_order.append(key_entry)
+
+    def _ok():
+        k = key_entry.get().strip()
+        if k:
+            got_key["value"] = k
+            root.destroy()
+        else:
+            _nvda_say("The field is empty. Please paste your API key first.")
+            key_entry.focus_set()
+
+    def _cancel():
+        root.destroy()
+
+    # Save button — very clear label
+    save_btn = tk.Button(
+        root, text="Save API key and start Nova",
+        font=("Segoe UI", 12, "bold"), takefocus=True,
+        bg="#2e7d32", fg="white", activebackground="#388e3c",
+        padx=20, pady=8, command=_ok)
+    save_btn.pack(pady=(0, 6))
+    save_btn.bind("<FocusIn>",
+        lambda e: _nvda_say("Save API key and start Nova button."), add="+")
+    focus_order.append(save_btn)
+
+    # Cancel button — very clear label
+    exit_btn = tk.Button(
+        root, text="Exit without saving",
+        font=("Segoe UI", 11), takefocus=True,
+        bg="#3a2222", fg="#cc8888", activebackground="#5a3333",
+        padx=16, pady=6, command=_cancel)
+    exit_btn.pack(pady=(0, 12))
+    exit_btn.bind("<FocusIn>",
+        lambda e: _nvda_say("Exit without saving button."), add="+")
+    focus_order.append(exit_btn)
+
+    # Tab / Shift-Tab cycling
+    for i, widget in enumerate(focus_order):
+        nxt = focus_order[(i + 1) % len(focus_order)]
+        prv = focus_order[(i - 1) % len(focus_order)]
         widget.bind("<Tab>", lambda e, w=nxt: (w.focus_set(), "break")[-1])
         widget.bind("<Shift-Tab>", lambda e, w=prv: (w.focus_set(), "break")[-1])
 
@@ -159,12 +186,10 @@ def _ask_api_key(settings):
     root.bind("<Escape>", lambda e: _cancel())
     root.protocol("WM_DELETE_WINDOW", _cancel)
 
-    # Set initial focus and announce for NVDA
     def _init_focus():
-        key_entry.focus_set()
-        _nvda_say("Nova Setup. You need a Gemini API key to use Nova. "
-                  "Get a free key at aistudio.google.com/apikey. "
-                  "Tab to move between fields. Type your key and press Enter.")
+        step1.focus_set()
+        _nvda_say("Nova first time setup. Use Tab to read each step. "
+                  "You need a Gemini API key. Tab through for instructions.")
 
     root.after(300, _init_focus)
     root.mainloop()
