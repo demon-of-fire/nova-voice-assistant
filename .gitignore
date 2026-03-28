@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+build/
+dist/
+*.spec
+*.exe
+*.log
+.env
+*.egg-info/
+.nova_settings.json

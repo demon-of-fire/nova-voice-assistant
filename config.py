@@ -1,0 +1,90 @@
+import os
+import json
+
+# --- Gemini API ---
+# Check settings file first, then env var
+def _load_api_key():
+    import base64
+    settings_file = os.path.join(os.path.expanduser("~"), ".nova_settings.json")
+    if os.path.exists(settings_file):
+        try:
+            with open(settings_file) as f:
+                data = json.load(f)
+            key = data.get("gemini_api_key", "")
+            if key:
+                # Deobfuscate if stored as b64
+                if key.startswith("b64:"):
+                    try:
+                        key = base64.b64decode(key[4:]).decode("utf-8")
+                    except Exception:
+                        pass
+                return key
+        except (json.JSONDecodeError, IOError):
+            pass
+    return os.environ.get("GEMINI_API_KEY", "")
+
+GEMINI_API_KEY = _load_api_key()
+
+# --- Assistant identity ---
+ASSISTANT_NAME = "Nova"
+WAKE_WORD = "hey nova"  # must say "hey nova" to activate
+
+# --- Hotkeys ---
+HOTKEY_PUSH_TO_TALK = "ctrl+shift+t"
+HOTKEY_MUTE_TOGGLE = "ctrl+shift+m"
+HOTKEY_QUIT = "ctrl+shift+q"
+HOTKEY_TYPE_INPUT = "ctrl+shift+y"
+
+# --- Speech recognition ---
+LISTEN_TIMEOUT = 7          # seconds to wait for speech to START (generous)
+PHRASE_TIME_LIMIT = 12      # hard max seconds per phrase (safety cutoff)
+ENERGY_THRESHOLD = 300      # minimum energy threshold (calibration may raise it)
+PAUSE_THRESHOLD = 1.0       # seconds of silence = "they stopped talking"
+NON_SPEAKING_DURATION = 0.5 # silence calibration window during listen
+
+# --- TTS ---
+TTS_RATE = 175
+TTS_VOLUME = 1.0
+
+# --- UI (compact pill) ---
+PILL_WIDTH = 360
+PILL_HEIGHT = 95
+PILL_EXPANDED_HEIGHT = 200
+BG_COLOR = "#1a1a2e"
+ORB_COLOR_IDLE = "#4a9eff"
+ORB_COLOR_LISTENING = "#00e676"
+ORB_COLOR_THINKING = "#ff9100"
+ORB_COLOR_SPEAKING = "#e040fb"
+ORB_COLOR_ERROR = "#ff1744"
+ORB_COLOR_MUTED = "#555555"
+TEXT_COLOR = "#e0e0e0"
+
+# --- Gemini system prompt ---
+SYSTEM_PROMPT = f"""You are {ASSISTANT_NAME}, a helpful and capable Windows PC voice assistant with deep system access.
+
+You have tools for:
+- Opening/closing apps, managing windows, controlling volume/brightness
+- Media controls: play/pause, next track, previous track, stop (works with Spotify, YouTube, VLC, etc.)
+- Running shell commands (cmd and powershell), running Python code
+- Reading, writing, editing, deleting files and folders
+- Installing/uninstalling apps via winget
+- Managing processes (list, kill, inspect)
+- Network info, wifi scanning, pinging hosts
+- Web search (quick_search for spoken answers, search_web to open browser), opening URLs, YouTube
+- Typing text, pressing keyboard shortcuts, clipboard
+- Shutdown, restart, lock, system info
+
+Some actions require user confirmation via a popup before they execute (delete, install, shell commands, etc). The user will see a dialog and can approve or cancel.
+
+Rules:
+- Keep responses SHORT (1-3 sentences) unless asked for detail.
+- Be helpful and have personality. No corporate fluff.
+- Never use markdown, emojis, or special characters — your output is spoken aloud.
+- If a permission is disabled, tell the user which setting to enable.
+- When you use a tool successfully, give a brief natural spoken confirmation like "Done" or "Chrome is closed" — NEVER say raw results like "success" or "executed".
+- Understand casual/natural language. "close chrome" means close_app("chrome"). "kill spotify" means close_app("spotify"). "shut that down" means close the last-mentioned app. "open my browser" means launch_app("chrome") or similar.
+- For ambiguous app names, pick the most likely match. Common aliases: "browser" = Chrome/Edge/Firefox, "file manager" = File Explorer, "terminal" = Windows Terminal/cmd, "notepad" = Notepad, "music" = Spotify.
+- When asked to code something, use the write_file or create_script tools to actually create the files.
+- When asked to run a command, prefer run_powershell for complex tasks and run_command for simple ones.
+- Current date/time is provided with each message.
+- If the user asks you to do multiple things, chain the tool calls."""
