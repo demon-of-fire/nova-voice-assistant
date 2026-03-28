@@ -273,7 +273,17 @@ class Brain:
                 return self.ollama.chat(user_text)
             return f"Sorry, Gemini error: {str(e)[:100]}"
 
+        if not response.candidates:
+            log.error("Gemini returned empty candidates")
+            if self.has_ollama:
+                return self.ollama.chat(user_text)
+            return "I didn't get a response. Please try again."
+
         candidate = response.candidates[0]
+        if not candidate.content or not candidate.content.parts:
+            log.error("Gemini returned empty parts")
+            return "I didn't get a response. Please try again."
+
         part = candidate.content.parts[0]
 
         if part.function_call:

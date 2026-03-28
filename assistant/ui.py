@@ -695,25 +695,26 @@ class AssistantUI:
         ox, oy = positions.get(pos, positions["bottom-right"])
         orb.geometry(f"{size}x{size}+{ox}+{oy}")
 
-        orb_canvas = tk.Canvas(orb, width=size, height=size,
-                               bg=self._bg, highlightthickness=0)
-        orb_canvas.pack()
-
         color = self._get_color()
-        cx, cy = size // 2, size // 2
-        r = 18
-        orb_canvas.create_oval(cx-r, cy-r, cx+r, cy+r, fill=color, outline="")
 
-        def _on_click(event):
+        # Use a real Button so NVDA can read it
+        orb_btn = tk.Button(orb, text="Nova", font=("Segoe UI", 9, "bold"),
+                            bg=color, fg="white", activebackground=color,
+                            width=4, height=2, bd=0, takefocus=True,
+                            command=lambda: _on_click())
+        orb_btn.pack(fill="both", expand=True)
+        orb_btn.bind("<FocusIn>",
+            lambda e: announce("Nova orb. Press Enter to open Nova."), add="+")
+
+        def _on_click():
             self._hide_floating_orb()
             self.show()
             if self.on_activate and not self._muted:
-                import threading
                 threading.Thread(target=self.on_activate, daemon=True).start()
 
-        orb_canvas.bind("<Button-1>", _on_click)
-
         # Drag support for the floating orb
+        orb._drag_x = 0
+        orb._drag_y = 0
         def _orb_start_drag(event):
             orb._drag_x = event.x
             orb._drag_y = event.y
@@ -721,8 +722,8 @@ class AssistantUI:
             x = orb.winfo_x() + event.x - orb._drag_x
             y = orb.winfo_y() + event.y - orb._drag_y
             orb.geometry(f"{size}x{size}+{x}+{y}")
-        orb_canvas.bind("<Button-3>", _orb_start_drag)
-        orb_canvas.bind("<B3-Motion>", _orb_on_drag)
+        orb_btn.bind("<Button-3>", _orb_start_drag)
+        orb_btn.bind("<B3-Motion>", _orb_on_drag)
 
     def _hide_floating_orb(self):
         if self._orb_win:

@@ -106,7 +106,7 @@ class Speaker:
             while pygame.mixer.music.get_busy():
                 pygame.time.wait(50)
 
-            pygame.mixer.music.unload()
+            pygame.mixer.music.stop()
         finally:
             try:
                 os.unlink(tmp_path)

@@ -37,7 +37,7 @@ class Assistant:
         time.sleep(0.3)
         self.listener.quick_calibrate()
 
-        self.listener.set_mute(True)
+        self.listener.set_mute(False)
         text = self.listener.listen_once()
         self.listener.set_mute(self.ui._muted)
 
@@ -66,7 +66,7 @@ class Assistant:
         time.sleep(0.3)
         self.listener.quick_calibrate()
 
-        self.listener.set_mute(True)
+        self.listener.set_mute(False)
         text = self.listener.listen_once()
         self.listener.set_mute(self.ui._muted)
 
@@ -107,7 +107,7 @@ class Assistant:
         self.listener.set_mute(True)
         self.listener.quick_calibrate()
 
-        self.listener.set_mute(True)
+        self.listener.set_mute(False)
         text = self.listener.listen_once()
         self.listener.set_mute(self.ui._muted)
 
