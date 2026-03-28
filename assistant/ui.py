@@ -1,10 +1,8 @@
 """Nova UI — fully NVDA accessible.
 
-No menus (tkinter menus are broken with NVDA). Instead:
-- Keyboard shortcuts for all actions
-- Settings opens as a proper dialog with labeled widgets
-- All buttons are real tk.Button with descriptive text
-- Window title announces state changes
+Every interactive element is a tk.Button (NVDA reads button text).
+tk.Label is only used for decorative/visual text that sighted users see.
+All important info is duplicated in button text or NVDA announce() calls.
 """
 
 import math
@@ -12,6 +10,11 @@ import threading
 import tkinter as tk
 import config
 from assistant.accessibility import announce, announce_state
+
+
+def _bind_enter(btn):
+    """Bind Return key to trigger a button's command — tkinter doesn't do this by default."""
+    btn.bind("<Return>", lambda e: btn.invoke())
 
 
 class AssistantUI:
@@ -98,11 +101,10 @@ class AssistantUI:
         )
         self.name_label.pack(anchor="w")
 
-        # Buttons row — packed directly into frame (not nested) for NVDA
+        # Buttons row
         btn_row = tk.Frame(self.frame, bg=self._bg)
         btn_row.pack(fill="x", padx=6, pady=(0, 4))
 
-        # Talk button (F2)
         self.talk_btn = tk.Button(
             btn_row, text="Talk (F2)",
             font=("Segoe UI", 9), takefocus=True,
@@ -112,10 +114,10 @@ class AssistantUI:
             command=lambda: self._on_activate_key(),
         )
         self.talk_btn.pack(side="left", padx=2)
+        _bind_enter(self.talk_btn)
         self.talk_btn.bind("<FocusIn>",
             lambda e: announce("Talk button. Press Enter or F2 to start listening."), add="+")
 
-        # Mute button (F3)
         self.mute_btn = tk.Button(
             btn_row, text="Mic on (F3)",
             font=("Segoe UI", 9), takefocus=True,
@@ -125,10 +127,10 @@ class AssistantUI:
             command=self._on_mute_click,
         )
         self.mute_btn.pack(side="left", padx=2)
+        _bind_enter(self.mute_btn)
         self.mute_btn.bind("<FocusIn>",
             lambda e: announce(f"{'Muted' if self._muted else 'Mic on'}. Press Enter or F3 to toggle."), add="+")
 
-        # Settings button (F4)
         self.settings_btn = tk.Button(
             btn_row, text="Settings (F4)",
             font=("Segoe UI", 9), takefocus=True,
@@ -138,10 +140,10 @@ class AssistantUI:
             command=self._open_settings,
         )
         self.settings_btn.pack(side="left", padx=2)
+        _bind_enter(self.settings_btn)
         self.settings_btn.bind("<FocusIn>",
             lambda e: announce("Settings button. Press Enter or F4 to open settings."), add="+")
 
-        # Hide button (Esc)
         self.close_btn = tk.Button(
             btn_row, text="Hide (Esc)",
             font=("Segoe UI", 9), takefocus=True,
@@ -151,10 +153,11 @@ class AssistantUI:
             command=self._minimize_to_tray,
         )
         self.close_btn.pack(side="left", padx=2)
+        _bind_enter(self.close_btn)
         self.close_btn.bind("<FocusIn>",
             lambda e: announce("Hide button. Press Enter or Escape to minimize to tray."), add="+")
 
-        # -- Tab loops: last -> first, first -> last --
+        # Tab cycling for main buttons
         main_btns = [self.talk_btn, self.mute_btn, self.settings_btn, self.close_btn]
         for i, btn in enumerate(main_btns):
             nxt = main_btns[(i + 1) % len(main_btns)]
@@ -162,7 +165,6 @@ class AssistantUI:
             btn.bind("<Tab>", lambda e, w=nxt: (w.focus_set(), "break")[-1])
             btn.bind("<Shift-Tab>", lambda e, w=prv: (w.focus_set(), "break")[-1])
 
-        # Give initial focus to the first button so NVDA finds it
         self.root.after(300, lambda: self.talk_btn.focus_set())
 
         # Response area (hidden until expanded)
@@ -176,8 +178,11 @@ class AssistantUI:
 
         self._animate()
 
+    # =====================================================================
+    #  SETTINGS — Tabbed layout with category buttons on the left
+    # =====================================================================
+
     def _open_settings(self):
-        """Settings dialog — fully dark mode, NVDA accessible, plain tk.Button only."""
         try:
             if self._settings_win and self._settings_win.winfo_exists():
                 self._settings_win.focus()
@@ -185,7 +190,6 @@ class AssistantUI:
         except Exception:
             self._settings_win = None
 
-        # -- Theme colors based on dark/light mode ---
         dark = self._settings.get("dark_mode")
         if dark is None:
             dark = True
@@ -193,44 +197,86 @@ class AssistantUI:
         FG = "#e0e0e0" if dark else "#1a1a1a"
         BTN_BG = "#2a2a4e" if dark else "#d8d8d8"
         BTN_FG = "#e0e0e0" if dark else "#1a1a1a"
-        BTN_ACTIVE_BG = "#3a3a5e" if dark else "#c0c0c0"
+        BTN_ACTIVE = "#3a3a5e" if dark else "#c0c0c0"
         ENTRY_BG = "#2a2a4e" if dark else "#ffffff"
         ENTRY_FG = "#e0e0e0" if dark else "#1a1a1a"
-        HEADING_FG = "#8888cc" if dark else "#333399"
         SEL_FG = "#88ff88" if dark else "#006600"
+        TAB_BG = "#111122" if dark else "#e0e0e0"
+        TAB_SEL = "#2e7d32"
 
         win = tk.Toplevel(self.root)
         win.title("Nova Settings")
-        win.geometry("520x720")
+        win.geometry("700x560")
         win.resizable(True, True)
         win.attributes("-topmost", True)
         win.configure(bg=BG)
         win.grab_set()
         self._settings_win = win
 
-        main_frame = tk.Frame(win, bg=BG)
-        main_frame.pack(fill="both", expand=True, padx=6, pady=6)
-
         def _on_close():
             self._settings_win = None
             win.grab_release()
             win.destroy()
 
-        focus_order = []
+        # ── Layout: sidebar (left) + content (right) ────────────────────
+        sidebar = tk.Frame(win, bg=TAB_BG, width=160)
+        sidebar.pack(side="left", fill="y")
+        sidebar.pack_propagate(False)
 
-        # -- Helpers -----------------------------------------------------------
+        content_outer = tk.Frame(win, bg=BG)
+        content_outer.pack(side="left", fill="both", expand=True)
 
-        def _label(text):
-            tk.Label(main_frame, text=text, font=("Segoe UI", 11, "bold"),
-                     bg=BG, fg=HEADING_FG, anchor="w").pack(fill="x", padx=8, pady=(12, 2))
+        # Scrollable content area using Canvas + Frame
+        content_canvas = tk.Canvas(content_outer, bg=BG, highlightthickness=0)
+        scrollbar = tk.Scrollbar(content_outer, orient="vertical", command=content_canvas.yview)
+        content_canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        content_canvas.pack(side="left", fill="both", expand=True)
 
-        def _toggle_btn(label_text, setting_key):
+        content_frame = tk.Frame(content_canvas, bg=BG)
+        content_window = content_canvas.create_window((0, 0), window=content_frame, anchor="nw")
+
+        def _on_content_configure(event):
+            content_canvas.configure(scrollregion=content_canvas.bbox("all"))
+            content_canvas.itemconfig(content_window, width=event.width)
+
+        content_frame.bind("<Configure>", lambda e: content_canvas.configure(scrollregion=content_canvas.bbox("all")))
+        content_canvas.bind("<Configure>", _on_content_configure)
+
+        # Mouse wheel scrolling
+        def _on_mousewheel(event):
+            content_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        win.bind("<MouseWheel>", _on_mousewheel)
+
+        # ── State ───────────────────────────────────────────────────────
+        current_tab = {"name": None}
+        tab_buttons = {}
+        tab_focus_orders = {}
+
+        # ── Helper functions ────────────────────────────────────────────
+
+        def _clear_content():
+            for w in content_frame.winfo_children():
+                w.destroy()
+
+        def _heading(text):
+            """Section heading — uses a Button so NVDA can read it."""
+            btn = tk.Button(content_frame, text=text,
+                            font=("Segoe UI", 11, "bold"), takefocus=True,
+                            bg=BG, fg="#8888cc" if dark else "#333399",
+                            activebackground=BG, activeforeground="#8888cc",
+                            bd=0, anchor="w", padx=8, pady=4)
+            btn.pack(fill="x", padx=4, pady=(10, 2))
+            _bind_enter(btn)
+            return btn
+
+        def _toggle_btn(parent, label_text, setting_key, focus_list):
             state = "ON" if self._settings.get(setting_key) else "OFF"
-            btn = tk.Button(main_frame, text=f"{label_text}: {state}",
+            btn = tk.Button(parent, text=f"{label_text}: {state}",
                             font=("Segoe UI", 10), anchor="w", takefocus=True,
-                            bg=BTN_BG, fg=BTN_FG, activebackground=BTN_ACTIVE_BG,
-                            activeforeground=BTN_FG, bd=0, padx=8, pady=3)
-            btn.pack(fill="x", padx=16, pady=1)
+                            bg=BTN_BG, fg=BTN_FG, activebackground=BTN_ACTIVE,
+                            activeforeground=BTN_FG, bd=0, padx=12, pady=4)
+            btn.pack(fill="x", padx=12, pady=1)
 
             def _on_click():
                 new_val = not self._settings.get(setting_key)
@@ -240,22 +286,21 @@ class AssistantUI:
                 announce(f"{label_text}, {s}")
 
             btn.configure(command=_on_click)
-            def _on_focus(event, txt=label_text, key=setting_key):
-                s = "ON" if self._settings.get(key) else "OFF"
-                announce(f"{txt}, {s}. Press Enter to toggle.")
-            btn.bind("<FocusIn>", _on_focus, add="+")
-            focus_order.append(btn)
+            _bind_enter(btn)
+            btn.bind("<FocusIn>", lambda e, t=label_text, k=setting_key:
+                announce(f"{t}, {'ON' if self._settings.get(k) else 'OFF'}. Press Enter to toggle."), add="+")
+            focus_list.append(btn)
             return btn
 
-        def _choice_btn(parent, label_text, setting_key, value, group_btns):
+        def _choice_btn(parent, label_text, setting_key, value, group_btns, focus_list):
             current = self._settings.get(setting_key)
             marker = "[selected] " if current == value else ""
             btn = tk.Button(parent, text=f"{marker}{label_text}",
                             font=("Segoe UI", 10), anchor="w", takefocus=True,
                             bg=BTN_BG, fg=SEL_FG if current == value else BTN_FG,
-                            activebackground=BTN_ACTIVE_BG, activeforeground=BTN_FG,
-                            bd=0, padx=8, pady=3)
-            btn.pack(fill="x", padx=16, pady=1)
+                            activebackground=BTN_ACTIVE, activeforeground=BTN_FG,
+                            bd=0, padx=12, pady=4)
+            btn.pack(fill="x", padx=12, pady=1)
             group_btns.append((btn, label_text, value))
 
             def _on_click():
@@ -267,272 +312,370 @@ class AssistantUI:
                 announce(f"{label_text}, selected")
 
             btn.configure(command=_on_click)
-            def _on_focus(event, txt=label_text, key=setting_key, val=value):
-                sel = "selected" if self._settings.get(key) == val else "not selected"
-                announce(f"{txt}, {sel}. Press Enter to select.")
-            btn.bind("<FocusIn>", _on_focus, add="+")
-            focus_order.append(btn)
+            _bind_enter(btn)
+            btn.bind("<FocusIn>", lambda e, t=label_text, k=setting_key, v=value:
+                announce(f"{t}, {'selected' if self._settings.get(k) == v else 'not selected'}. Enter to select."), add="+")
+            focus_list.append(btn)
             return btn
 
-        # == AI Backend ========================================================
-        _label("AI Backend")
-        ai_group = []
-        _choice_btn(main_frame, "Auto mode, Gemini for actions, Ollama for chat",
-                     "ai_mode", "auto", ai_group)
-        _choice_btn(main_frame, "Gemini only, cloud AI, can do PC actions",
-                     "ai_mode", "gemini_only", ai_group)
-        _choice_btn(main_frame, "Ollama only, local AI, free, chat only",
-                     "ai_mode", "ollama_only", ai_group)
+        def _setup_tab_navigation(focus_list):
+            """Set up Tab/Shift-Tab cycling within a tab's widgets."""
+            if not focus_list:
+                return
+            for i, widget in enumerate(focus_list):
+                nxt = focus_list[(i + 1) % len(focus_list)]
+                prv = focus_list[(i - 1) % len(focus_list)]
+                widget.bind("<Tab>", lambda e, w=nxt: (w.focus_set(), "break")[-1])
+                widget.bind("<Shift-Tab>", lambda e, w=prv: (w.focus_set(), "break")[-1])
 
-        # -- Gemini model picker --
-        _label("Gemini Model")
-        gemini_models = [
-            ("gemini-2.5-flash", "Gemini 2.5 Flash, fast and smart, recommended"),
-            ("gemini-2.5-pro", "Gemini 2.5 Pro, smartest, best for complex tasks"),
-            ("gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite, fastest, lightweight"),
-            ("gemini-3-flash-preview", "Gemini 3.0 Flash Preview, newest, experimental"),
-            ("gemini-3-pro-preview", "Gemini 3.0 Pro Preview, newest, most capable"),
-        ]
-        gemini_group = []
-        for mid, mdesc in gemini_models:
-            _choice_btn(main_frame, mdesc, "gemini_model", mid, gemini_group)
+        # ── Tab content builders ────────────────────────────────────────
 
-        # -- Ollama model picker --
-        _label("Ollama Model")
-        ollama_models = []
-        try:
-            import urllib.request
-            import json as _json
-            req = urllib.request.Request("http://localhost:11434/api/tags")
-            resp = urllib.request.urlopen(req, timeout=2)
-            data = _json.loads(resp.read())
-            ollama_models = [m["name"] for m in data.get("models", [])]
-        except Exception:
-            pass
+        def _build_ai_models():
+            focus_list = []
 
-        if ollama_models:
-            ollama_group = []
-            for m in ollama_models:
-                short = m.split(":")[0]
-                _choice_btn(main_frame, short, "ollama_model", short, ollama_group)
-        else:
-            # Show popular Ollama models as buttons + manual entry
-            popular_ollama = [
-                "llama3.2", "llama3.1", "llama3",
-                "mistral", "mixtral", "phi3",
-                "gemma2", "codellama", "deepseek-coder",
-                "qwen2.5", "llava",
+            h = _heading("AI Backend")
+            focus_list.append(h)
+            ai_group = []
+            _choice_btn(content_frame, "Auto: Gemini for actions, Ollama for chat",
+                        "ai_mode", "auto", ai_group, focus_list)
+            _choice_btn(content_frame, "Gemini only: cloud AI, can do PC actions",
+                        "ai_mode", "gemini_only", ai_group, focus_list)
+            _choice_btn(content_frame, "Ollama only: local AI, free, chat only",
+                        "ai_mode", "ollama_only", ai_group, focus_list)
+
+            h = _heading("Gemini Model")
+            focus_list.append(h)
+            gemini_models = [
+                ("gemini-2.5-flash", "Gemini 2.5 Flash — fast and smart, recommended"),
+                ("gemini-2.5-pro", "Gemini 2.5 Pro — smartest, best for complex tasks"),
+                ("gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite — fastest, lightweight"),
+                ("gemini-3-flash-preview", "Gemini 3.0 Flash Preview — newest, experimental"),
+                ("gemini-3-pro-preview", "Gemini 3.0 Pro Preview — newest, most capable"),
             ]
-            ollama_group = []
-            for m in popular_ollama:
-                _choice_btn(main_frame, m, "ollama_model", m, ollama_group)
+            gemini_group = []
+            for mid, mdesc in gemini_models:
+                _choice_btn(content_frame, mdesc, "gemini_model", mid, gemini_group, focus_list)
 
-            # Also allow manual entry
-            model_row = tk.Frame(main_frame, bg=BG)
-            model_row.pack(fill="x", padx=16, pady=(4, 1))
-            model_entry = tk.Entry(model_row, font=("Segoe UI", 10), width=20,
-                                   bg=ENTRY_BG, fg=ENTRY_FG, insertbackground=ENTRY_FG)
-            model_entry.insert(0, self._settings.get("ollama_model") or "llama3.2")
-            model_entry.pack(side="left", padx=(0, 4))
-            def _on_model_focus(event):
-                announce(f"Ollama model name, current value {model_entry.get()}. Type a name and Tab to Save.")
-            model_entry.bind("<FocusIn>", _on_model_focus, add="+")
-            focus_order.append(model_entry)
+            h = _heading("Gemini API Key")
+            focus_list.append(h)
+            current_key = self._settings.get("gemini_api_key") or config.GEMINI_API_KEY
+            masked = "key is saved" if current_key else "not set"
 
-            def _save_model():
-                val = model_entry.get().strip()
-                self._settings.set("ollama_model", val)
-                announce(f"Saved Ollama model as {val}")
-            save_btn = tk.Button(model_row, text="Save model", font=("Segoe UI", 9),
-                                 bg=BTN_BG, fg=BTN_FG, activebackground=BTN_ACTIVE_BG,
-                                 bd=0, command=_save_model)
-            save_btn.pack(side="left")
-            save_btn.bind("<FocusIn>", lambda e: announce("Save model name button."), add="+")
-            focus_order.append(save_btn)
+            key_row = tk.Frame(content_frame, bg=BG)
+            key_row.pack(fill="x", padx=12, pady=4)
+            key_entry = tk.Entry(key_row, show="*", font=("Segoe UI", 10), width=28,
+                                 bg=ENTRY_BG, fg=ENTRY_FG, insertbackground=ENTRY_FG, takefocus=True)
+            key_entry.pack(side="left", padx=(0, 6))
+            key_entry.bind("<FocusIn>",
+                lambda e: announce(f"Gemini API key field. Current status: {masked}. Type or paste your key."), add="+")
+            focus_list.append(key_entry)
 
-        # -- Gemini API key --
-        _label("Gemini API Key")
-        current_key = self._settings.get("gemini_api_key") or config.GEMINI_API_KEY
-        masked = "key saved" if current_key else "not set"
-        key_row = tk.Frame(main_frame, bg=BG)
-        key_row.pack(fill="x", padx=16, pady=(4, 1))
-        key_entry = tk.Entry(key_row, show="*", font=("Segoe UI", 10), width=28,
-                             bg=ENTRY_BG, fg=ENTRY_FG, insertbackground=ENTRY_FG)
-        key_entry.pack(side="left", padx=(0, 4))
-        key_entry.bind("<FocusIn>",
-                       lambda e: announce(f"Gemini API key field. Current: {masked}. Type your key."),
-                       add="+")
-        focus_order.append(key_entry)
+            def _save_key():
+                k = key_entry.get().strip()
+                if k:
+                    self._settings.set("gemini_api_key", k)
+                    import os
+                    os.environ["GEMINI_API_KEY"] = k
+                    key_entry.delete(0, "end")
+                    announce("API key saved")
+                else:
+                    announce("No key entered")
 
-        def _save_key():
-            k = key_entry.get().strip()
-            if k:
-                self._settings.set("gemini_api_key", k)
-                import os
-                os.environ["GEMINI_API_KEY"] = k
-                key_entry.delete(0, "end")
-                announce("API key saved securely")
+            save_key_btn = tk.Button(key_row, text="Save API key", font=("Segoe UI", 10),
+                                     bg=BTN_BG, fg=BTN_FG, activebackground=BTN_ACTIVE,
+                                     bd=0, padx=8, pady=3, command=_save_key, takefocus=True)
+            save_key_btn.pack(side="left")
+            _bind_enter(save_key_btn)
+            save_key_btn.bind("<FocusIn>", lambda e: announce("Save API key button."), add="+")
+            focus_list.append(save_key_btn)
+
+            h = _heading("Ollama Model")
+            focus_list.append(h)
+            ollama_models = []
+            try:
+                import urllib.request
+                import json as _json
+                req = urllib.request.Request("http://localhost:11434/api/tags")
+                resp = urllib.request.urlopen(req, timeout=2)
+                data = _json.loads(resp.read())
+                ollama_models = [m["name"] for m in data.get("models", [])]
+            except Exception:
+                pass
+
+            if ollama_models:
+                ollama_group = []
+                for m in ollama_models:
+                    short = m.split(":")[0]
+                    _choice_btn(content_frame, short, "ollama_model", short, ollama_group, focus_list)
             else:
-                announce("No key entered")
-        save_key_btn = tk.Button(key_row, text="Save key", font=("Segoe UI", 9),
-                                 bg=BTN_BG, fg=BTN_FG, activebackground=BTN_ACTIVE_BG,
-                                 bd=0, command=_save_key)
-        save_key_btn.pack(side="left")
-        save_key_btn.bind("<FocusIn>", lambda e: announce("Save API key button."), add="+")
-        focus_order.append(save_key_btn)
+                popular = ["llama3.2", "llama3.1", "llama3", "mistral", "mixtral",
+                           "phi3", "gemma2", "codellama", "deepseek-coder", "qwen2.5"]
+                ollama_group = []
+                for m in popular:
+                    _choice_btn(content_frame, m, "ollama_model", m, ollama_group, focus_list)
 
-        # == Permissions =======================================================
-        _label("Basic Permissions")
-        for key, label in [
-            ("allow_typing", "Allow typing in documents"),
-            ("allow_keyboard_control", "Allow keyboard shortcuts and window control"),
-            ("allow_app_launch", "Allow launching and closing apps"),
-            ("allow_system_control", "Allow volume, brightness, shutdown, restart"),
-            ("allow_web_search", "Allow web search and opening URLs"),
-            ("allow_file_access", "Allow reading files and listing folders"),
-            ("allow_process_control", "Allow listing and managing processes"),
-            ("allow_network", "Allow network info, wifi scan, ping"),
-        ]:
-            _toggle_btn(label, key)
+                model_row = tk.Frame(content_frame, bg=BG)
+                model_row.pack(fill="x", padx=12, pady=4)
+                model_entry = tk.Entry(model_row, font=("Segoe UI", 10), width=20,
+                                       bg=ENTRY_BG, fg=ENTRY_FG, insertbackground=ENTRY_FG, takefocus=True)
+                model_entry.insert(0, self._settings.get("ollama_model") or "llama3.2")
+                model_entry.pack(side="left", padx=(0, 6))
+                model_entry.bind("<FocusIn>",
+                    lambda e: announce(f"Ollama model name field. Current: {model_entry.get()}."), add="+")
+                focus_list.append(model_entry)
 
-        _label("Advanced Permissions")
-        for key, label in [
-            ("allow_file_write", "Allow writing, editing, and moving files"),
-            ("allow_file_delete", "Allow deleting files and folders"),
-            ("allow_shell_commands", "Allow running shell commands"),
-            ("allow_install_apps", "Allow installing and uninstalling apps"),
-            ("allow_code_execution", "Allow running Python code"),
-        ]:
-            _toggle_btn(label, key)
+                def _save_model():
+                    val = model_entry.get().strip()
+                    self._settings.set("ollama_model", val)
+                    announce(f"Saved Ollama model: {val}")
 
-        # == Voice =============================================================
-        _label("Text to Speech Voice")
-        try:
-            from assistant.speaker import list_voices
-            available_voices = list_voices()
-        except Exception:
-            available_voices = []
+                save_model_btn = tk.Button(model_row, text="Save model name",
+                                           font=("Segoe UI", 10), takefocus=True,
+                                           bg=BTN_BG, fg=BTN_FG, activebackground=BTN_ACTIVE,
+                                           bd=0, padx=8, pady=3, command=_save_model)
+                save_model_btn.pack(side="left")
+                _bind_enter(save_model_btn)
+                save_model_btn.bind("<FocusIn>", lambda e: announce("Save Ollama model name button."), add="+")
+                focus_list.append(save_model_btn)
 
-        if available_voices:
-            voice_group = []
-            for vid, vname in available_voices:
-                _choice_btn(main_frame, vname, "tts_voice", vid, voice_group)
+            return focus_list
 
-        # == Speech Speed ======================================================
-        _label("Speech Speed")
+        def _build_permissions():
+            focus_list = []
 
-        speed_btn_slower = tk.Button(main_frame, anchor="w", takefocus=True,
-                                     font=("Segoe UI", 10), bg=BTN_BG, fg=BTN_FG,
-                                     activebackground=BTN_ACTIVE_BG, bd=0, padx=8, pady=3)
-        speed_btn_slower.pack(fill="x", padx=16, pady=1)
-        speed_btn_faster = tk.Button(main_frame, anchor="w", takefocus=True,
-                                     font=("Segoe UI", 10), bg=BTN_BG, fg=BTN_FG,
-                                     activebackground=BTN_ACTIVE_BG, bd=0, padx=8, pady=3)
-        speed_btn_faster.pack(fill="x", padx=16, pady=1)
+            h = _heading("Basic Permissions")
+            focus_list.append(h)
+            for key, label in [
+                ("allow_typing", "Allow typing in documents"),
+                ("allow_keyboard_control", "Allow keyboard shortcuts and window control"),
+                ("allow_app_launch", "Allow launching and closing apps"),
+                ("allow_system_control", "Allow volume, brightness, shutdown, restart"),
+                ("allow_web_search", "Allow web search and opening URLs"),
+                ("allow_file_access", "Allow reading files and listing folders"),
+                ("allow_process_control", "Allow listing and managing processes"),
+                ("allow_network", "Allow network info, wifi scan, ping"),
+            ]:
+                _toggle_btn(content_frame, label, key, focus_list)
 
-        def _update_speed():
-            r = self._settings.get("tts_rate") or 160
-            speed_btn_slower.configure(text=f"Speed: {r} wpm. Press to slow down.")
-            speed_btn_faster.configure(text=f"Speed: {r} wpm. Press to speed up.")
-        _update_speed()
+            h = _heading("Advanced Permissions (use with caution)")
+            focus_list.append(h)
+            for key, label in [
+                ("allow_file_write", "Allow writing, editing, and moving files"),
+                ("allow_file_delete", "Allow deleting files and folders"),
+                ("allow_shell_commands", "Allow running shell commands"),
+                ("allow_install_apps", "Allow installing and uninstalling apps"),
+                ("allow_code_execution", "Allow running Python code"),
+            ]:
+                _toggle_btn(content_frame, label, key, focus_list)
 
-        def _slower():
-            r = max(80, (self._settings.get("tts_rate") or 160) - 20)
-            self._settings.set("tts_rate", r)
+            return focus_list
+
+        def _build_voice():
+            focus_list = []
+
+            h = _heading("Text to Speech Voice")
+            focus_list.append(h)
+            try:
+                from assistant.speaker import list_voices
+                available_voices = list_voices()
+            except Exception:
+                available_voices = []
+
+            if available_voices:
+                voice_group = []
+                for vid, vname in available_voices:
+                    _choice_btn(content_frame, vname, "tts_voice", vid, voice_group, focus_list)
+
+            h = _heading("Speech Speed")
+            focus_list.append(h)
+
+            speed_btn_slower = tk.Button(content_frame, anchor="w", takefocus=True,
+                                         font=("Segoe UI", 10), bg=BTN_BG, fg=BTN_FG,
+                                         activebackground=BTN_ACTIVE, bd=0, padx=12, pady=4)
+            speed_btn_slower.pack(fill="x", padx=12, pady=1)
+            speed_btn_faster = tk.Button(content_frame, anchor="w", takefocus=True,
+                                         font=("Segoe UI", 10), bg=BTN_BG, fg=BTN_FG,
+                                         activebackground=BTN_ACTIVE, bd=0, padx=12, pady=4)
+            speed_btn_faster.pack(fill="x", padx=12, pady=1)
+
+            def _update_speed():
+                r = self._settings.get("tts_rate") or 160
+                speed_btn_slower.configure(text=f"Speed: {r} wpm — press to slow down")
+                speed_btn_faster.configure(text=f"Speed: {r} wpm — press to speed up")
             _update_speed()
-            announce(f"Speed {r}")
-        def _faster():
-            r = min(300, (self._settings.get("tts_rate") or 160) + 20)
-            self._settings.set("tts_rate", r)
-            _update_speed()
-            announce(f"Speed {r}")
 
-        speed_btn_slower.configure(command=_slower)
-        speed_btn_faster.configure(command=_faster)
-        speed_btn_slower.bind("<FocusIn>", lambda e: announce(
-            f"Speech speed {self._settings.get('tts_rate')} words per minute. Enter to slow down."), add="+")
-        speed_btn_faster.bind("<FocusIn>", lambda e: announce(
-            f"Speech speed {self._settings.get('tts_rate')} words per minute. Enter to speed up."), add="+")
-        focus_order.extend([speed_btn_slower, speed_btn_faster])
+            def _slower():
+                r = max(80, (self._settings.get("tts_rate") or 160) - 20)
+                self._settings.set("tts_rate", r)
+                _update_speed()
+                announce(f"Speed {r}")
 
-        # == Speech Recognition Engine =========================================
-        _label("Speech Recognition Engine")
-        try:
-            from assistant.listener import get_available_stt_engines
-            stt_engines = get_available_stt_engines()
-        except Exception:
-            stt_engines = [("google", "Google (online)", "Needs internet")]
+            def _faster():
+                r = min(300, (self._settings.get("tts_rate") or 160) + 20)
+                self._settings.set("tts_rate", r)
+                _update_speed()
+                announce(f"Speed {r}")
 
-        stt_group = []
-        for eng_id, eng_name, eng_desc in stt_engines:
-            if "not installed" not in eng_name:
-                _choice_btn(main_frame, f"{eng_name}, {eng_desc}",
-                            "stt_engine", eng_id, stt_group)
+            speed_btn_slower.configure(command=_slower)
+            speed_btn_faster.configure(command=_faster)
+            _bind_enter(speed_btn_slower)
+            _bind_enter(speed_btn_faster)
+            speed_btn_slower.bind("<FocusIn>", lambda e: announce(
+                f"Speech speed {self._settings.get('tts_rate')} words per minute. Enter to slow down."), add="+")
+            speed_btn_faster.bind("<FocusIn>", lambda e: announce(
+                f"Speech speed {self._settings.get('tts_rate')} words per minute. Enter to speed up."), add="+")
+            focus_list.extend([speed_btn_slower, speed_btn_faster])
 
-        # == General ===========================================================
-        _label("General")
-        _toggle_btn("Enable wake word, say Hey Nova to activate", "wake_word_enabled")
-        _toggle_btn("Start minimized to system tray", "start_minimized")
-        _toggle_btn("Ask for confirmation before dangerous actions", "confirm_actions")
-        _toggle_btn("Follow-up mode, keep listening after each response", "follow_up_mode")
+            h = _heading("Speech Recognition Engine")
+            focus_list.append(h)
+            try:
+                from assistant.listener import get_available_stt_engines
+                stt_engines = get_available_stt_engines()
+            except Exception:
+                stt_engines = [("google", "Google (online)", "Needs internet")]
 
-        # -- Dark/light mode toggle --
-        _label("Appearance")
+            stt_group = []
+            for eng_id, eng_name, eng_desc in stt_engines:
+                if "not installed" not in eng_name:
+                    _choice_btn(content_frame, f"{eng_name} — {eng_desc}",
+                                "stt_engine", eng_id, stt_group, focus_list)
 
-        def _toggle_theme():
-            new_dark = not self._settings.get("dark_mode")
-            self._settings.set("dark_mode", new_dark)
-            announce(f"{'Dark' if new_dark else 'Light'} mode. Reopen settings to see change.")
+            return focus_list
 
-        theme_state = "Dark mode" if dark else "Light mode"
-        theme_btn = tk.Button(main_frame, text=f"Theme: {theme_state}. Press to switch.",
-                              font=("Segoe UI", 10), anchor="w", takefocus=True,
-                              bg=BTN_BG, fg=BTN_FG, activebackground=BTN_ACTIVE_BG,
-                              bd=0, padx=8, pady=3, command=_toggle_theme)
-        theme_btn.pack(fill="x", padx=16, pady=1)
-        theme_btn.bind("<FocusIn>", lambda e: announce(
-            f"Theme is {'dark mode' if self._settings.get('dark_mode') else 'light mode'}. Enter to switch."), add="+")
-        focus_order.append(theme_btn)
+        def _build_general():
+            focus_list = []
 
-        # -- Orb position --
-        _label("Floating Orb Position")
-        orb_positions = [
-            ("bottom-right", "Bottom right"),
-            ("bottom-left", "Bottom left"),
-            ("top-right", "Top right"),
-            ("top-left", "Top left"),
+            h = _heading("Behavior")
+            focus_list.append(h)
+            _toggle_btn(content_frame, "Enable wake word — say Hey Nova to activate", "wake_word_enabled", focus_list)
+            _toggle_btn(content_frame, "Follow-up mode — keep listening after each response", "follow_up_mode", focus_list)
+            _toggle_btn(content_frame, "Confirm before dangerous actions", "confirm_actions", focus_list)
+            _toggle_btn(content_frame, "Start minimized to system tray", "start_minimized", focus_list)
+
+            return focus_list
+
+        def _build_appearance():
+            focus_list = []
+
+            h = _heading("Theme")
+            focus_list.append(h)
+
+            def _toggle_theme():
+                new_dark = not self._settings.get("dark_mode")
+                self._settings.set("dark_mode", new_dark)
+                announce(f"{'Dark' if new_dark else 'Light'} mode. Restart settings to see change.")
+
+            theme_state = "Dark mode" if dark else "Light mode"
+            theme_btn = tk.Button(content_frame, text=f"Theme: {theme_state} — press to switch",
+                                  font=("Segoe UI", 10), anchor="w", takefocus=True,
+                                  bg=BTN_BG, fg=BTN_FG, activebackground=BTN_ACTIVE,
+                                  bd=0, padx=12, pady=4, command=_toggle_theme)
+            theme_btn.pack(fill="x", padx=12, pady=1)
+            _bind_enter(theme_btn)
+            theme_btn.bind("<FocusIn>", lambda e: announce(
+                f"Theme is {'dark mode' if self._settings.get('dark_mode') else 'light mode'}. Enter to switch."), add="+")
+            focus_list.append(theme_btn)
+
+            h = _heading("Floating Orb Position")
+            focus_list.append(h)
+            orb_positions = [
+                ("bottom-right", "Bottom right"),
+                ("bottom-left", "Bottom left"),
+                ("top-right", "Top right"),
+                ("top-left", "Top left"),
+            ]
+            orb_group = []
+            for pos_val, pos_label in orb_positions:
+                _choice_btn(content_frame, pos_label, "orb_position", pos_val, orb_group, focus_list)
+
+            return focus_list
+
+        # ── Tab switching ───────────────────────────────────────────────
+
+        tabs = [
+            ("AI Models", _build_ai_models),
+            ("Permissions", _build_permissions),
+            ("Voice", _build_voice),
+            ("General", _build_general),
+            ("Appearance", _build_appearance),
         ]
-        orb_group = []
-        for pos_val, pos_label in orb_positions:
-            _choice_btn(main_frame, pos_label, "orb_position", pos_val, orb_group)
 
-        # == Close =============================================================
-        close_btn = tk.Button(main_frame, text="Close Settings",
-                              font=("Segoe UI", 12, "bold"), bg="#2e7d32", fg="white",
-                              activebackground="#388e3c", bd=0, padx=12, pady=6,
-                              command=_on_close, takefocus=True)
-        close_btn.pack(pady=(12, 8))
-        close_btn.bind("<FocusIn>",
-                       lambda e: announce("Close Settings button. Enter to close."), add="+")
-        focus_order.append(close_btn)
+        def _switch_tab(tab_name, builder):
+            if current_tab["name"] == tab_name:
+                return
+            current_tab["name"] = tab_name
 
-        # -- Tab / Shift-Tab cycling -------------------------------------------
-        for i, widget in enumerate(focus_order):
-            nxt = focus_order[(i + 1) % len(focus_order)]
-            prv = focus_order[(i - 1) % len(focus_order)]
-            widget.bind("<Tab>", lambda e, w=nxt: (w.focus_set(), "break")[-1])
-            widget.bind("<Shift-Tab>", lambda e, w=prv: (w.focus_set(), "break")[-1])
+            # Update tab button styles
+            for name, btn in tab_buttons.items():
+                if name == tab_name:
+                    btn.configure(bg=TAB_SEL, fg="white")
+                else:
+                    btn.configure(bg=TAB_BG, fg=FG)
+
+            # Rebuild content
+            _clear_content()
+            focus_list = builder()
+
+            # Add close button at bottom of every tab
+            close_btn = tk.Button(content_frame, text="Close Settings",
+                                  font=("Segoe UI", 11, "bold"), bg="#2e7d32", fg="white",
+                                  activebackground="#388e3c", bd=0, padx=12, pady=6,
+                                  command=_on_close, takefocus=True)
+            close_btn.pack(fill="x", padx=12, pady=(16, 8))
+            _bind_enter(close_btn)
+            close_btn.bind("<FocusIn>",
+                lambda e: announce("Close Settings button. Press Enter to close."), add="+")
+            focus_list.append(close_btn)
+
+            tab_focus_orders[tab_name] = focus_list
+            _setup_tab_navigation(focus_list)
+
+            # Scroll to top and focus first widget
+            content_canvas.yview_moveto(0)
+            if focus_list:
+                win.after(100, lambda: focus_list[0].focus_set())
+            announce(f"{tab_name} settings")
+
+        # ── Build sidebar tab buttons ───────────────────────────────────
+
+        tk.Button(sidebar, text="Settings", font=("Segoe UI", 12, "bold"),
+                  bg=TAB_BG, fg=FG, activebackground=TAB_BG,
+                  bd=0, takefocus=False, state="disabled",
+                  disabledforeground=FG).pack(fill="x", padx=4, pady=(12, 8))
+
+        sidebar_btns = []
+        for tab_name, builder in tabs:
+            btn = tk.Button(sidebar, text=tab_name,
+                            font=("Segoe UI", 10), anchor="w", takefocus=True,
+                            bg=TAB_BG, fg=FG, activebackground=BTN_ACTIVE,
+                            bd=0, padx=12, pady=6,
+                            command=lambda n=tab_name, b=builder: _switch_tab(n, b))
+            btn.pack(fill="x", padx=4, pady=1)
+            _bind_enter(btn)
+            btn.bind("<FocusIn>", lambda e, n=tab_name: announce(
+                f"{n} tab. Press Enter to open. Use Tab to move between tabs."), add="+")
+            tab_buttons[tab_name] = btn
+            sidebar_btns.append(btn)
+
+        # Tab cycling for sidebar
+        for i, btn in enumerate(sidebar_btns):
+            nxt = sidebar_btns[(i + 1) % len(sidebar_btns)]
+            prv = sidebar_btns[(i - 1) % len(sidebar_btns)]
+            btn.bind("<Tab>", lambda e, w=nxt: (w.focus_set(), "break")[-1])
+            btn.bind("<Shift-Tab>", lambda e, w=prv: (w.focus_set(), "break")[-1])
 
         win.protocol("WM_DELETE_WINDOW", _on_close)
         win.bind("<Escape>", lambda e: _on_close())
 
-        def _init_focus():
-            announce("Nova Settings. Tab to move between buttons. "
-                     "Enter to toggle or select. Escape to close.")
-            if focus_order:
-                focus_order[0].focus_set()
+        # Open first tab
+        _switch_tab(tabs[0][0], tabs[0][1])
 
-        win.after(200, _init_focus)
+        def _init_focus():
+            announce("Nova Settings. Use Tab to move between category tabs on the left. "
+                     "Press Enter to open a category. Escape to close.")
+            sidebar_btns[0].focus_set()
+
+        win.after(300, _init_focus)
 
     # --- State ---
 
@@ -697,12 +840,12 @@ class AssistantUI:
 
         color = self._get_color()
 
-        # Use a real Button so NVDA can read it
         orb_btn = tk.Button(orb, text="Nova", font=("Segoe UI", 9, "bold"),
                             bg=color, fg="white", activebackground=color,
                             width=4, height=2, bd=0, takefocus=True,
                             command=lambda: _on_click())
         orb_btn.pack(fill="both", expand=True)
+        _bind_enter(orb_btn)
         orb_btn.bind("<FocusIn>",
             lambda e: announce("Nova orb. Press Enter to open Nova."), add="+")
 
@@ -712,7 +855,6 @@ class AssistantUI:
             if self.on_activate and not self._muted:
                 threading.Thread(target=self.on_activate, daemon=True).start()
 
-        # Drag support for the floating orb
         orb._drag_x = 0
         orb._drag_y = 0
         def _orb_start_drag(event):
@@ -732,9 +874,6 @@ class AssistantUI:
             except Exception:
                 pass
             self._orb_win = None
-
-    def _quit_from_menu(self):
-        self.root.quit()
 
     def show(self):
         self._hide_floating_orb()
