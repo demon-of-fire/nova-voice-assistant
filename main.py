@@ -52,14 +52,16 @@ def main():
             tray_icon.stop()
 
     except Exception:
-        with open(log_path, "w") as f:
-            traceback.print_exc(file=f)
-        # Also try to show the error in a message box
+        err = traceback.format_exc()
+        try:
+            with open(log_path, "w") as f:
+                f.write(err)
+        except Exception:
+            pass
         try:
             import ctypes
-            msg = traceback.format_exc()
             ctypes.windll.user32.MessageBoxW(
-                0, f"Nova crashed. Error log: {log_path}\n\n{msg[:500]}",
+                0, f"Nova crashed.\n\nError log saved to:\n{log_path}\n\n{err[:800]}",
                 "Nova Error", 0x10
             )
         except Exception:

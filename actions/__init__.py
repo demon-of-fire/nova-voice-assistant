@@ -1,7 +1,5 @@
 """Action registry — maps Gemini function calls to actual handlers."""
 
-from google import genai
-
 from actions.apps import launch_app, close_app
 from actions.windows import minimize_window, maximize_window, close_window, switch_window, snap_window
 from actions.input_control import type_text, press_keys
