@@ -23,7 +23,7 @@ SOUNDS_DIR = os.path.join(_base, "sounds")
 
 # Preload
 _sounds = {}
-_NAMES = ["activate", "deactivate", "listening", "thinking", "mute", "unmute", "error"]
+_NAMES = ["activate", "deactivate", "listening", "thinking", "mute", "unmute", "error", "not_understood"]
 
 for name in _NAMES:
     # Prefer WAV, fall back to MP3

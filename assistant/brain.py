@@ -104,6 +104,15 @@ ACTION_PERMISSIONS = {
     "media_next": "allow_system_control",
     "media_previous": "allow_system_control",
     "media_stop": "allow_system_control",
+    # Screen control
+    "click_at": "allow_screen_control",
+    "double_click_at": "allow_screen_control",
+    "right_click_at": "allow_screen_control",
+    "move_mouse": "allow_screen_control",
+    "scroll_screen": "allow_screen_control",
+    "drag_to": "allow_screen_control",
+    "get_screen_size": "allow_screen_control",
+    "get_mouse_position": "allow_screen_control",
     # quit_assistant has no permission gate — always allowed
 }
 
@@ -179,6 +188,7 @@ class Brain:
         self.gemini_client = None
         self.gemini_tools = None
         self.gemini_history = []
+        self.screen_sharing = False  # When True, screenshots are sent with each message
 
         # Try to set up Gemini
         api_key = settings.get("gemini_api_key") or config.GEMINI_API_KEY
@@ -238,8 +248,24 @@ class Brain:
         now = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
         msg = f"[{now}] {user_text}"
 
+        # Build message parts — text + optional screenshot
+        parts = [_types.Part(text=msg)]
+        if self.screen_sharing:
+            try:
+                from actions.screen import take_screenshot
+                img_bytes = take_screenshot()
+                parts.append(_types.Part.from_bytes(data=img_bytes, mime_type="image/png"))
+                parts[0] = _types.Part(
+                    text=msg + "\n\n[A screenshot of the user's screen is attached. "
+                    "Use it to see what the user sees. If they ask you to click something, "
+                    "identify the element's coordinates from the screenshot and use click_at. "
+                    "The screenshot resolution matches the screen pixel coordinates.]"
+                )
+            except Exception as e:
+                log.error("Screenshot failed: %s", e)
+
         self.gemini_history.append(
-            _types.Content(role="user", parts=[_types.Part(text=msg)])
+            _types.Content(role="user", parts=parts)
         )
         if len(self.gemini_history) > 200:
             self.gemini_history = self.gemini_history[-200:]
@@ -284,104 +310,149 @@ class Brain:
             log.error("Gemini returned empty parts")
             return "I didn't get a response. Please try again."
 
-        part = candidate.content.parts[0]
+        # Check if ANY part has a function call
+        has_fn = any(p.function_call for p in candidate.content.parts)
+        if has_fn:
+            return self._handle_function_calls(candidate)
 
-        if part.function_call:
-            return self._handle_function_call(candidate, part)
-
-        reply = part.text.strip() if part.text else "I didn't catch that."
+        reply = candidate.content.parts[0].text
+        reply = reply.strip() if reply else "I didn't catch that."
         self.gemini_history.append(candidate.content)
         return reply
 
-    def _handle_function_call(self, candidate, part):
-        """Execute a Gemini function call."""
-        fn = part.function_call
-        fn_name = fn.name
-        fn_args = dict(fn.args) if fn.args else {}
-
+    def _execute_one(self, fn_name, fn_args):
+        """Execute a single function call. Returns (result_str, cancelled_bool)."""
+        log.info("Gemini called: %s(%s)", fn_name, fn_args)
         # Check permission
         required_perm = ACTION_PERMISSIONS.get(fn_name)
         if required_perm and not self.settings.get(required_perm):
             perm_label = required_perm.replace("allow_", "").replace("_", " ")
-            result = f"That action is disabled. Enable '{perm_label}' in the Settings menu."
-            self.gemini_history.append(candidate.content)
-            self.gemini_history.append(
-                _types.Content(role="user", parts=[_types.Part(
-                    function_response=_types.FunctionResponse(
-                        name=fn_name, response={"result": result},
-                    )
-                )])
-            )
-            self.gemini_history.append(
-                _types.Content(role="model", parts=[_types.Part(text=result)])
-            )
-            return result
+            return f"Blocked: '{perm_label}' is disabled in Settings.", False
 
         # Check if action needs confirmation
         from actions.confirmation import needs_confirmation, ask_confirmation
         if needs_confirmation(fn_name):
             desc = f"{fn_name}({', '.join(f'{k}={v!r}' for k, v in fn_args.items())})"
             if not ask_confirmation(f"Nova wants to: {desc}"):
-                cancel_msg = "Cancelled by user."
+                return "Cancelled by user.", True
+
+        result = actions.execute(fn_name, fn_args)
+        log.info("Action %s(%s) -> %s", fn_name, fn_args, result[:100] if result else "None")
+        return result, False
+
+    def _handle_function_calls(self, candidate):
+        """Execute ALL function calls from a Gemini response, then loop for more.
+
+        Supports multi-action: Gemini can return multiple function_call parts
+        in one response, AND the follow-up response can contain more calls.
+        Loops up to 10 rounds to prevent infinite chains.
+        """
+        MAX_ROUNDS = 10
+
+        try:
+            return self._function_call_loop(candidate, MAX_ROUNDS)
+        except Exception as e:
+            log.error("Function call chain crashed: %s", e, exc_info=True)
+            return f"Something went wrong while executing that action."
+
+    def _function_call_loop(self, candidate, MAX_ROUNDS):
+        for _round in range(MAX_ROUNDS):
+            parts = candidate.content.parts
+
+            # Gather all function calls in this response
+            fn_calls = [(p.function_call.name, dict(p.function_call.args) if p.function_call.args else {})
+                        for p in parts if p.function_call]
+
+            if not fn_calls:
+                # No more function calls — extract text reply
+                text_parts = [p.text.strip() for p in parts if p.text and p.text.strip()]
+                reply = " ".join(text_parts) if text_parts else "Done."
                 self.gemini_history.append(candidate.content)
-                self.gemini_history.append(
-                    _types.Content(role="user", parts=[_types.Part(
+                return reply
+
+            # Add model's function-call content to history
+            self.gemini_history.append(candidate.content)
+
+            # Execute each function call and collect results
+            response_parts = []
+            any_cancelled = False
+            last_result = ""
+
+            for fn_name, fn_args in fn_calls:
+                result, cancelled = self._execute_one(fn_name, fn_args)
+                if cancelled:
+                    any_cancelled = True
+                last_result = result
+                response_parts.append(
+                    _types.Part(
                         function_response=_types.FunctionResponse(
-                            name=fn_name, response={"result": cancel_msg},
+                            name=fn_name, response={"result": result},
                         )
-                    )])
+                    )
                 )
+
+            # If screen sharing, attach a fresh screenshot so Gemini sees the result
+            if self.screen_sharing:
+                try:
+                    from actions.screen import take_screenshot
+                    img_bytes = take_screenshot()
+                    response_parts.append(
+                        _types.Part.from_bytes(data=img_bytes, mime_type="image/png")
+                    )
+                    response_parts.append(
+                        _types.Part(text="[Updated screenshot after executing the action(s).]")
+                    )
+                except Exception:
+                    pass
+
+            # Add all function results to history in one message
+            self.gemini_history.append(
+                _types.Content(role="user", parts=response_parts)
+            )
+
+            if any_cancelled and len(fn_calls) == 1:
                 self.gemini_history.append(
                     _types.Content(role="model", parts=[_types.Part(text="Alright, cancelled.")])
                 )
                 return "Alright, cancelled."
 
-        result = actions.execute(fn_name, fn_args)
-        log.info("Action %s(%s) -> %s", fn_name, fn_args, result[:100] if result else "None")
-
-        self.gemini_history.append(candidate.content)
-        self.gemini_history.append(
-            _types.Content(
-                role="user",
-                parts=[_types.Part(
-                    function_response=_types.FunctionResponse(
-                        name=fn_name, response={"result": result},
+            # Ask Gemini for a follow-up (might be text OR more function calls)
+            try:
+                follow_up = self.gemini_client.models.generate_content(
+                    model=self.model,
+                    contents=self.gemini_history,
+                    config=_types.GenerateContentConfig(
+                        system_instruction=config.SYSTEM_PROMPT,
+                        tools=[self.gemini_tools],
+                        temperature=0.5,
+                        max_output_tokens=300,
+                    ),
+                )
+                if not follow_up.candidates or not follow_up.candidates[0].content:
+                    self.gemini_history.append(
+                        _types.Content(role="model", parts=[_types.Part(text="Done.")])
                     )
-                )],
-            )
-        )
+                    return "Done."
 
-        try:
-            follow_up = self.gemini_client.models.generate_content(
-                model=self.model,
-                contents=self.gemini_history,
-                config=_types.GenerateContentConfig(
-                    system_instruction=config.SYSTEM_PROMPT,
-                    tools=[self.gemini_tools],
-                    temperature=0.5,
-                    max_output_tokens=150,
-                ),
-            )
-            # Make sure it's a text response, not another function call
-            fp = follow_up.candidates[0].content.parts[0]
-            if fp.text:
-                reply = fp.text.strip()
-            else:
-                reply = "Done."
-        except Exception as e:
-            log.error("Follow-up Gemini call failed: %s", e)
-            # Generate a natural response from the raw result instead of speaking it
-            if "opened" in result.lower() or "closed" in result.lower():
-                reply = result
-            elif "error" in result.lower() or "couldn't" in result.lower():
-                reply = result
-            else:
-                reply = "Done."
+                candidate = follow_up.candidates[0]
+                # Loop continues — next iteration checks if this has more function calls
 
+            except Exception as e:
+                log.error("Follow-up Gemini call failed: %s", e)
+                if "error" in last_result.lower() or "couldn't" in last_result.lower():
+                    reply = last_result
+                else:
+                    reply = "Done."
+                self.gemini_history.append(
+                    _types.Content(role="model", parts=[_types.Part(text=reply)])
+                )
+                return reply
+
+        # Exhausted max rounds
         self.gemini_history.append(
-            _types.Content(role="model", parts=[_types.Part(text=reply)])
+            _types.Content(role="model", parts=[_types.Part(text="Done.")])
         )
-        return reply
+        return "Done."
 
     def clear_history(self):
         self.gemini_history = []

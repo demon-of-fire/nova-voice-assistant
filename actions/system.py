@@ -128,9 +128,13 @@ def media_stop():
 
 # ── Assistant self-control ─────────────────────────────────────────────────
 
+_quit_requested = False
+
 def quit_assistant():
-    """Quit the Nova assistant. The brain will speak the response first, then this runs."""
-    import threading
-    # Delay exit slightly so the TTS response can play
-    threading.Timer(2.0, lambda: os._exit(0)).start()
+    """Quit the Nova assistant. Sets a flag — the main loop checks it."""
+    global _quit_requested
+    _quit_requested = True
     return "Goodbye! Shutting down Nova."
+
+def is_quit_requested():
+    return _quit_requested

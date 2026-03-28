@@ -37,6 +37,10 @@ def main():
         "--hidden-import", "pygame",
         "--hidden-import", "pygame.mixer",
         "--hidden-import", "edge_tts",
+        "--hidden-import", "webview",
+        "--hidden-import", "clr_loader",
+        "--hidden-import", "pythonnet",
+        "--hidden-import", "bottle",
         "main.py",
     ]
 

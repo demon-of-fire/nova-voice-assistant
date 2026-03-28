@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nova Voice Assistant</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Screen reader live region -->
+  <div id="sr-announce" aria-live="assertive" aria-atomic="true" role="status"></div>
+
+  <!-- ===== MAIN VIEW ===== -->
+  <div id="main-view" role="main" aria-label="Nova Voice Assistant">
+    <div class="top-row">
+      <div class="orb-container" role="button" aria-label="Nova orb. Click to start listening." tabindex="0" onclick="onOrbClick()" onkeydown="if(event.key==='Enter')onOrbClick()">
+        <div id="orb" class="orb"></div>
+      </div>
+      <div class="text-col">
+        <div id="status-text" class="status-text" aria-live="polite">Ready. Ctrl+Shift+T to talk.</div>
+        <div class="hint-text">F2: Talk | F3: Mute | F4: Settings | F5: Screen | Esc: Hide</div>
+      </div>
+    </div>
+
+    <nav class="btn-row" aria-label="Main controls">
+      <button id="btn-talk" class="btn btn-talk" onclick="onTalk()" aria-label="Talk. Press to start listening. Shortcut F2.">Talk (F2)</button>
+      <button id="btn-mute" class="btn btn-mute" onclick="onMute()" aria-label="Microphone on. Press to toggle mute. Shortcut F3.">Mic on (F3)</button>
+      <button id="btn-screen" class="btn" onclick="onScreenShare()" aria-label="Screen sharing off. Press to toggle screen sharing. Shortcut F5.">Screen (F5)</button>
+      <button id="btn-settings" class="btn" onclick="onSettings()" aria-label="Settings. Shortcut F4.">Settings (F4)</button>
+      <button id="btn-hide" class="btn btn-hide" onclick="onHide()" aria-label="Hide to tray. Shortcut Escape.">Hide (Esc)</button>
+    </nav>
+
+    <div id="response-area" class="response-area" role="region" aria-label="Nova response" aria-live="polite"></div>
+  </div>
+
+  <!-- ===== SETTINGS VIEW ===== -->
+  <div id="settings-view" role="dialog" aria-label="Nova Settings">
+    <div class="settings-sidebar" role="tablist" aria-label="Settings categories" id="settings-sidebar"></div>
+    <div class="settings-content" id="settings-content"></div>
+  </div>
+
+  <!-- ===== CONFIRMATION MODAL ===== -->
+  <div id="confirm-modal" class="modal-overlay" role="dialog" aria-label="Confirm action" aria-modal="true">
+    <div class="modal">
+      <h2 id="confirm-title">Confirmation Required</h2>
+      <p id="confirm-desc"></p>
+      <div class="btn-row">
+        <button id="btn-confirm-yes" class="btn btn-danger" onclick="pywebview.api.confirm_response(true); hideConfirmation();" aria-label="Yes, do it. Press to confirm.">Yes, do it</button>
+        <button id="btn-confirm-no" class="btn btn-cancel" onclick="pywebview.api.confirm_response(false); hideConfirmation();" aria-label="Cancel. Press to cancel.">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TYPE-TO-CHAT MODAL ===== -->
+  <div id="type-modal" class="modal-overlay type-modal" role="dialog" aria-label="Type a message to Nova" aria-modal="true">
+    <div class="modal">
+      <h2>Type a message to Nova</h2>
+      <div class="input-row">
+        <input type="text" id="type-input" aria-label="Message to Nova. Type and press Enter to send." placeholder="Type your message here..." onkeydown="if(event.key==='Enter'){event.preventDefault();sendTypedMessage();}">
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-save" onclick="sendTypedMessage()" aria-label="Send message">Send</button>
+        <button class="btn btn-cancel" onclick="hideTypeChat()" aria-label="Cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== API KEY SETUP VIEW ===== -->
+  <div id="apikey-view" role="main" aria-label="Nova first time setup">
+    <h1>Nova — First Time Setup</h1>
+    <p class="step"><strong>Step 1:</strong> You need a free Gemini API key to use Nova.</p>
+    <p class="step"><strong>Step 2:</strong> Go to aistudio.google.com/apikey to get your free key.</p>
+    <p class="step"><strong>Step 3:</strong> Paste your API key below and press Enter.</p>
+    <div class="input-row">
+      <input type="password" id="apikey-input" aria-label="Paste or type your Gemini API key here, then press Enter." placeholder="Paste API key here..." onkeydown="if(event.key==='Enter'){event.preventDefault();saveApiKey();}">
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-save" onclick="saveApiKey()" aria-label="Save API key and start Nova">Save API key and start Nova</button>
+      <button class="btn btn-cancel" onclick="exitWithoutSaving()" aria-label="Exit without saving">Exit without saving</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

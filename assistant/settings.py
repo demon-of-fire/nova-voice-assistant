@@ -44,6 +44,7 @@ DEFAULTS = {
     "allow_process_control": True,  # list/kill processes
     "allow_network": True,          # network info, wifi scan, ping
     "allow_code_execution": False,  # run arbitrary Python code (dangerous)
+    "allow_screen_control": False,  # screen sharing + mouse control
     "ai_mode": "auto",             # "auto", "gemini_only", "ollama_only"
     "gemini_model": "gemini-2.5-flash",  # which Gemini model to use
     "ollama_model": "llama3.2",    # which Ollama model to use
@@ -51,7 +52,7 @@ DEFAULTS = {
     "tts_volume": 1.0,
     "tts_voice": "en-US-GuyNeural",  # Edge TTS neural voice
     "stt_engine": "google",       # "google" (online), "sphinx" (offline/light), "whisper" (offline/accurate)
-    "wake_word_enabled": True,
+    "wake_word_enabled": False,
     "start_minimized": False,
     "confirm_actions": True,      # show "are you sure?" before dangerous actions
     "follow_up_mode": True,       # keep listening after responding for follow-ups

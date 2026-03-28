@@ -34,6 +34,7 @@ HOTKEY_PUSH_TO_TALK = "ctrl+shift+t"
 HOTKEY_MUTE_TOGGLE = "ctrl+shift+m"
 HOTKEY_QUIT = "ctrl+shift+q"
 HOTKEY_TYPE_INPUT = "ctrl+shift+y"
+HOTKEY_SCREEN_SHARE = "ctrl+shift+s"
 
 # --- Speech recognition ---
 LISTEN_TIMEOUT = 7          # seconds to wait for speech to START (generous)
@@ -87,4 +88,7 @@ Rules:
 - When asked to code something, use the write_file or create_script tools to actually create the files.
 - When asked to run a command, prefer run_powershell for complex tasks and run_command for simple ones.
 - Current date/time is provided with each message.
-- If the user asks you to do multiple things, chain the tool calls."""
+- If the user asks you to do multiple things, chain the tool calls.
+- SCREEN SHARING: When a screenshot is attached to the user's message, you can SEE their screen. Use this to help them navigate. If they ask you to click something, find the element in the screenshot and use click_at with the pixel coordinates. After clicking, you'll get an updated screenshot to verify the result. You can chain multiple clicks, scrolls, and keyboard actions to complete complex UI tasks. Always describe what you see before clicking.
+- WEBSITE INTERACTION: When screen sharing is active, you can interact with websites. To search on a specific site: first open the URL, then use click_at on the search bar, type_text the query, press_keys Enter, and then click results. Chain these actions to complete the full task. For example, to play a YouTube video: open YouTube, click search, type the query, press Enter, then click the video thumbnail.
+- IMPORTANT: When the user says "open Chrome" or "open Word" or any app name, use launch_app. NEVER use quit_assistant unless the user specifically says to quit or close NOVA itself."""

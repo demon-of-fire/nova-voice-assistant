@@ -82,15 +82,58 @@ def launch_app(app_name):
 
 
 def close_app(app_name):
-    """Kill a running application by process name."""
+    """Kill a running application by process name — protects Nova and system processes."""
     search = app_name.lower().strip()
+
+    # Never kill these process names — they're system/Nova infrastructure
+    # msedgewebview2 is shared by many apps (Nova, Spotify, Teams, etc.)
+    # Killing it can crash ANY app using webview2, including Nova.
+    protected_names = {
+        "msedgewebview2.exe", "nova.exe", "python.exe", "pythonw.exe",
+        "explorer.exe", "svchost.exe", "csrss.exe", "dwm.exe",
+        "system", "system idle process", "lsass.exe", "services.exe",
+        "conhost.exe", "bash.exe", "cmd.exe", "powershell.exe",
+    }
+
+    # Use taskkill via Windows — it's smarter about closing apps gracefully
+    # and won't nuke shared processes like webview2
+    # First try graceful close, then force if needed
     killed = []
-    for proc in psutil.process_iter(["name", "pid"]):
+    main_procs = []
+
+    for proc in psutil.process_iter(["name", "pid", "exe"]):
         try:
             pname = proc.info["name"].lower()
+            pid = proc.info["pid"]
+            if pname in protected_names:
+                continue
             if search in pname:
-                proc.kill()
-                killed.append(proc.info["name"])
+                main_procs.append((pid, proc.info["name"]))
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
+    if not main_procs:
+        return f"Couldn't find '{app_name}' running."
+
+    for pid, name in main_procs:
+        try:
+            p = psutil.Process(pid)
+            # Terminate (graceful) first, then kill if it doesn't stop
+            p.terminate()
+            killed.append(name)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
+    # Give processes a moment to close gracefully
+    import time
+    time.sleep(0.5)
+
+    # Force kill any that are still alive
+    for pid, name in main_procs:
+        try:
+            p = psutil.Process(pid)
+            if p.is_running():
+                p.kill()
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
 

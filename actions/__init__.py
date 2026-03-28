@@ -21,6 +21,10 @@ from actions.filesystem import (
 from actions.process import list_processes, kill_process, get_process_info
 from actions.network import get_network_info, get_wifi_networks, ping, get_public_ip
 from actions.code import run_python, create_script
+from actions.screen import (
+    click_at, double_click_at, right_click_at, move_mouse,
+    scroll_screen, drag_to, get_screen_size, get_mouse_position,
+)
 
 
 # Maps function name -> callable
@@ -87,6 +91,15 @@ ACTIONS = {
     # Code
     "run_python": run_python,
     "create_script": create_script,
+    # Screen control
+    "click_at": click_at,
+    "double_click_at": double_click_at,
+    "right_click_at": right_click_at,
+    "move_mouse": move_mouse,
+    "scroll_screen": scroll_screen,
+    "drag_to": drag_to,
+    "get_screen_size": get_screen_size,
+    "get_mouse_position": get_mouse_position,
 }
 
 
@@ -167,7 +180,7 @@ TOOL_DECLARATIONS = [
 
     _s("media_stop", "Stop media playback entirely.", {}),
 
-    _s("quit_assistant", "Quit and close the Nova assistant completely. Use when the user says goodbye, close, quit, exit, or shut down Nova.", {}),
+    _s("quit_assistant", "Quit the Nova voice assistant itself. ONLY use when the user explicitly says 'quit Nova', 'close Nova', 'exit Nova', or 'goodbye Nova'. Do NOT use this for closing other apps or windows — use close_app or close_window instead.", {}),
 
     _s("search_web", "Search Google for a query and OPEN it in the browser. Only use this when the user explicitly wants to see results in their browser.",
        {"query": {"type": "string", "description": "What to search for"}},
@@ -307,6 +320,44 @@ TOOL_DECLARATIONS = [
         "code": {"type": "string", "description": "The script code"},
         "language": {"type": "string", "description": "Programming language (default: python)"}},
        ["path", "code"]),
+
+    # ── Screen control (requires screen sharing to be active) ────────────
+
+    _s("click_at", "Click at a specific screen coordinate. Use when the user asks you to click something on screen. You MUST have analyzed a screenshot first to know coordinates.",
+       {"x": {"type": "number", "description": "X pixel coordinate"},
+        "y": {"type": "number", "description": "Y pixel coordinate"},
+        "button": {"type": "string", "description": "Mouse button: left, right, or middle (default: left)"}},
+       ["x", "y"]),
+
+    _s("double_click_at", "Double-click at a screen coordinate.",
+       {"x": {"type": "number", "description": "X coordinate"},
+        "y": {"type": "number", "description": "Y coordinate"}},
+       ["x", "y"]),
+
+    _s("right_click_at", "Right-click at a screen coordinate.",
+       {"x": {"type": "number", "description": "X coordinate"},
+        "y": {"type": "number", "description": "Y coordinate"}},
+       ["x", "y"]),
+
+    _s("move_mouse", "Move the mouse cursor to a screen coordinate.",
+       {"x": {"type": "number", "description": "X coordinate"},
+        "y": {"type": "number", "description": "Y coordinate"}},
+       ["x", "y"]),
+
+    _s("scroll_screen", "Scroll the mouse wheel. Positive = up, negative = down.",
+       {"clicks": {"type": "number", "description": "Number of scroll clicks (positive=up, negative=down)"},
+        "x": {"type": "number", "description": "X coordinate to scroll at (optional)"},
+        "y": {"type": "number", "description": "Y coordinate to scroll at (optional)"}},
+       ["clicks"]),
+
+    _s("drag_to", "Click and drag from one point to another.",
+       {"start_x": {"type": "number"}, "start_y": {"type": "number"},
+        "end_x": {"type": "number"}, "end_y": {"type": "number"}},
+       ["start_x", "start_y", "end_x", "end_y"]),
+
+    _s("get_screen_size", "Get the screen resolution.", {}),
+
+    _s("get_mouse_position", "Get the current mouse cursor position.", {}),
 ]
 
 
