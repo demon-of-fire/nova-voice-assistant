@@ -130,10 +130,36 @@ class Api:
     # --- API key setup ---
 
     def save_api_key(self, key):
+        # Strip whitespace, quotes, and invisible characters
+        key = key.strip().strip('"').strip("'").strip()
+        if not key:
+            return {"ok": False, "error": "Key is empty"}
+
+        # Reject masked/placeholder keys (bullet chars)
+        if "\u2022" in key or "••" in key:
+            return {"ok": False, "error": "Please paste your actual API key, not the masked value."}
+
+        # Quick validation — try a simple Gemini API call
+        try:
+            from google import genai
+            client = genai.Client(api_key=key)
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents="Say hi in one word.",
+            )
+            # If we get here, the key works
+        except Exception as e:
+            err = str(e).lower()
+            if "api key" in err or "invalid" in err or "403" in err or "unauthorized" in err:
+                return {"ok": False, "error": "Invalid API key. Check that you copied the full key."}
+            # Other errors (network, quota) — key might still be valid, allow it
+            pass
+
         self._ui._settings.set("gemini_api_key", key)
         os.environ["GEMINI_API_KEY"] = key
         self._ui._apikey_result = key
         self._ui._apikey_event.set()
+        return {"ok": True}
 
     def exit_app(self):
         self._ui._apikey_result = ""

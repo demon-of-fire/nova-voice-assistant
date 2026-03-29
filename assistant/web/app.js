@@ -315,14 +315,23 @@ function buildAIModels(panel) {
   heading(panel, "Gemini API Key");
   const currentKey = settingsData.gemini_api_key;
   const keyStatus = currentKey ? "Key is saved" : "Not set";
+  const maskedKey = currentKey ? "••••••••" + currentKey.slice(-4) : "";
 
   const row = document.createElement("div");
   row.className = "input-row";
 
   const input = document.createElement("input");
   input.type = "password";
-  input.placeholder = "Paste API key here";
+  input.placeholder = currentKey ? "Key saved — paste new key to replace" : "Paste API key here";
+  if (currentKey) input.value = maskedKey;
   input.setAttribute("aria-label", "Gemini API key. Status: " + keyStatus);
+  // Clear masked value when user focuses to type a new key
+  input.addEventListener("focus", function() {
+    if (input.value === maskedKey) input.value = "";
+  });
+  input.addEventListener("blur", function() {
+    if (!input.value.trim() && currentKey) input.value = maskedKey;
+  });
   row.appendChild(input);
 
   const saveBtn = document.createElement("button");
@@ -330,12 +339,17 @@ function buildAIModels(panel) {
   saveBtn.textContent = "Save key";
   saveBtn.addEventListener("click", async () => {
     const k = input.value.trim();
-    if (k) {
-      await pywebview.api.set_setting("gemini_api_key", k);
-      input.value = "";
-      announce("API key saved");
+    if (!k || k === maskedKey || k.includes("••")) {
+      announce("No new key entered");
+      return;
+    }
+    announce("Checking API key...");
+    const result = await pywebview.api.save_api_key(k);
+    if (result && result.ok === false) {
+      announce(result.error || "Invalid API key.");
     } else {
-      announce("No key entered");
+      announce("API key saved and verified.");
+      input.value = "••••••••" + k.slice(-4);
     }
   });
   row.appendChild(saveBtn);
@@ -542,14 +556,24 @@ function showApiKeyView() {
   setTimeout(() => document.getElementById("apikey-input").focus(), 200);
 }
 
-function saveApiKey() {
+async function saveApiKey() {
   const input = document.getElementById("apikey-input");
   const key = input.value.trim();
-  if (key) {
-    pywebview.api.save_api_key(key);
-  } else {
+  if (!key) {
     announce("The field is empty. Please paste your API key first.");
     input.focus();
+    return;
+  }
+  announce("Checking your API key...");
+  const result = await pywebview.api.save_api_key(key);
+  if (result && result.ok === false) {
+    announce(result.error || "Invalid API key. Please try again.");
+    input.focus();
+    input.select();
+  } else {
+    // Mask the key so it's not visible
+    input.value = "••••••••" + key.slice(-4);
+    announce("API key saved and verified. Setting up Nova...");
   }
 }
 
