@@ -135,10 +135,6 @@ class Api:
         if not key:
             return {"ok": False, "error": "Key is empty"}
 
-        # Reject masked/placeholder keys (bullet chars)
-        if "\u2022" in key or "••" in key:
-            return {"ok": False, "error": "Please paste your actual API key, not the masked value."}
-
         # Quick validation — try a simple Gemini API call
         try:
             from google import genai
