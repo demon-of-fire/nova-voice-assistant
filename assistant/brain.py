@@ -330,11 +330,13 @@ class Brain:
             return f"Blocked: '{perm_label}' is disabled in Settings.", False
 
         # Check if action needs confirmation
-        from actions.confirmation import needs_confirmation, ask_confirmation
+        from actions.confirmation import needs_confirmation, ask_confirmation, suppress_next
         if needs_confirmation(fn_name):
             desc = f"{fn_name}({', '.join(f'{k}={v!r}' for k, v in fn_args.items())})"
             if not ask_confirmation(f"Nova wants to: {desc}"):
                 return "Cancelled by user.", True
+            # Skip the handler's own confirmation — we already asked
+            suppress_next()
 
         result = actions.execute(fn_name, fn_args)
         log.info("Action %s(%s) -> %s", fn_name, fn_args, result[:100] if result else "None")

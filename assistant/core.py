@@ -26,61 +26,77 @@ class Assistant:
         self.ui.on_mute_toggle = self.toggle_mute
         self.ui._process_text_cb = self._process
         self.ui._brain_ref = self.brain
+        self._activation_lock = threading.Lock()
+
+    def _try_begin(self):
+        """Atomically claim the activation slot. Returns True if this thread
+        may start listening (prevents hotkey/voice/button double-activation)."""
+        if self.ui._muted:
+            return False
+        if not self._activation_lock.acquire(blocking=False):
+            return False
+        if self.ui._state != "idle":
+            self._activation_lock.release()
+            return False
+        return True
+
+    def _end(self):
+        self._activation_lock.release()
 
     def activate(self):
         """Full interaction cycle: listen -> think -> respond -> maybe follow up."""
-        if self.ui._muted:
+        if not self._try_begin():
             return
-        if self.ui._state != "idle":
-            return
+        try:
+            self.listener.set_mute(True)
+            self.ui.set_state("listening", "Listening...")
 
-        self.listener.set_mute(True)
-        self.ui.set_state("listening", "Listening...")
+            from assistant import sounds
+            sounds.play_sync("activate")
+            time.sleep(0.3)
+            self.listener.quick_calibrate()
 
-        from assistant import sounds
-        sounds.play_sync("activate")
-        time.sleep(0.3)
-        self.listener.quick_calibrate()
+            self.listener.set_mute(False)
+            text = self.listener.listen_once()
+            self.listener.set_mute(self.ui._muted)
 
-        self.listener.set_mute(False)
-        text = self.listener.listen_once()
-        self.listener.set_mute(self.ui._muted)
+            if not text:
+                # Didn't understand — play a gentle sound and go back to idle
+                sounds.play("not_understood")
+                self.ui.set_state("idle", "Ready. Ctrl+Shift+T to talk.")
+                return
 
-        if not text:
-            # Didn't understand — play a gentle sound and go back to idle
-            sounds.play("not_understood")
-            self.ui.set_state("idle", "Ready. Ctrl+Shift+T to talk.")
-            return
-
-        self._process(text)
+            self._process(text)
+        finally:
+            self._end()
 
     def activate_silent(self):
         """Activate without voice prompt (for hotkey)."""
-        if self.ui._muted:
+        if not self._try_begin():
             return
-        if self.ui._state != "idle":
-            return
+        try:
+            self.listener.set_mute(True)
+            self.ui.show()
+            self.ui.set_state("listening", "Listening...")
 
-        self.listener.set_mute(True)
-        self.ui.show()
-        self.ui.set_state("listening", "Listening...")
+            from assistant import sounds
+            sounds.play_sync("activate")
+            time.sleep(0.3)
+            self.listener.quick_calibrate()
 
-        from assistant import sounds
-        sounds.play_sync("activate")
-        time.sleep(0.3)
-        self.listener.quick_calibrate()
+            self.listener.set_mute(False)
+            text = self.listener.listen_once()
+            self.listener.set_mute(self.ui._muted)
 
-        self.listener.set_mute(False)
-        text = self.listener.listen_once()
-        self.listener.set_mute(self.ui._muted)
+            if not text:
+                # Didn't understand — play a gentle sound and go back to idle
+                sounds.play("not_understood")
+                self.ui.set_state("idle", "Ready. Ctrl+Shift+T to talk.")
+                return
 
-        if not text:
-            # Didn't understand — play a gentle sound and go back to idle
-            sounds.play("not_understood")
-            self.ui.set_state("idle", "Ready. Ctrl+Shift+T to talk.")
-            return
-
-        self._process(text)
+            self._process(text)
+        finally:
+            self._end()
 
     def _process(self, text):
         """Send text to brain, speak the response, then optionally follow up."""

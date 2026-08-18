@@ -30,9 +30,16 @@ def list_processes():
 
 
 def kill_process(name_or_pid):
-    """Kill a process by name or PID."""
+    """Kill a process by name or PID. Refuses to kill Nova or system processes."""
     if not ask_confirmation(f"Kill process: {name_or_pid}"):
         return "Action cancelled by user."
+
+    protected_names = {
+        "nova.exe", "python.exe", "pythonw.exe", "msedgewebview2.exe",
+        "explorer.exe", "svchost.exe", "csrss.exe", "dwm.exe",
+        "system", "system idle process", "lsass.exe", "services.exe",
+        "conhost.exe", "cmd.exe", "powershell.exe", "winlogon.exe",
+    }
 
     killed = []
 
@@ -41,6 +48,8 @@ def kill_process(name_or_pid):
         pid = int(name_or_pid)
         proc = psutil.Process(pid)
         proc_name = proc.name()
+        if proc_name.lower() in protected_names:
+            return f"Refusing to kill protected process {proc_name}."
         proc.kill()
         return f"Killed {proc_name} (PID {pid})."
     except (ValueError, TypeError):
@@ -54,9 +63,14 @@ def kill_process(name_or_pid):
 
     # Search by name
     search = str(name_or_pid).lower().strip()
+    if len(search) < 3:
+        return "That name is too short to be safe. Please be more specific."
     for proc in psutil.process_iter(["name", "pid"]):
         try:
-            if search in proc.info["name"].lower():
+            pname = proc.info["name"].lower()
+            if pname in protected_names:
+                continue
+            if search in pname:
                 proc.kill()
                 killed.append(f"{proc.info['name']} (PID {proc.info['pid']})")
         except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -78,13 +92,18 @@ def get_process_info(name):
             if search in proc.info["name"].lower():
                 info = proc.info
                 import datetime
-                created = datetime.datetime.fromtimestamp(info["create_time"]).strftime("%I:%M %p")
-                mem_mb = (proc.memory_info().rss / (1024 * 1024)) if proc.is_running() else 0
+                created = info.get("create_time")
+                created_str = (datetime.datetime.fromtimestamp(created).strftime("%I:%M %p")
+                               if created else "unknown")
+                try:
+                    mem_mb = proc.memory_info().rss / (1024 * 1024)
+                except Exception:
+                    mem_mb = 0
                 found.append(
                     f"{info['name']} (PID {info['pid']}): "
-                    f"Status {info['status']}, CPU {info['cpu_percent']:.1f}%, "
-                    f"Memory {mem_mb:.1f} MB, Threads {info['num_threads']}, "
-                    f"Started at {created}"
+                    f"Status {info['status']}, CPU {info['cpu_percent'] or 0:.1f}%, "
+                    f"Memory {mem_mb:.1f} MB, Threads {info.get('num_threads') or 0}, "
+                    f"Started at {created_str}"
                 )
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue

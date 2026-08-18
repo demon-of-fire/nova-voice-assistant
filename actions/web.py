@@ -8,7 +8,8 @@ import re
 
 
 def search_web(query):
-    webbrowser.open(f"https://www.google.com/search?q={query}")
+    encoded = urllib.parse.quote_plus(query)
+    webbrowser.open(f"https://www.google.com/search?q={encoded}")
     return f"Searching for {query}."
 
 
@@ -80,5 +81,6 @@ def open_url(url):
 
 
 def search_youtube(query):
-    webbrowser.open(f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}")
+    encoded = urllib.parse.quote_plus(query)
+    webbrowser.open(f"https://www.youtube.com/results?search_query={encoded}")
     return f"Searching YouTube for {query}."

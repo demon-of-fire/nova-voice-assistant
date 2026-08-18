@@ -11,7 +11,11 @@ import time
 
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 import pygame
-pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+try:
+    pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+except Exception:
+    # No audio device (RDP, headless, broken drivers) — run silently instead of crashing at import
+    pass
 
 # Find sounds directory
 if getattr(sys, "frozen", False):

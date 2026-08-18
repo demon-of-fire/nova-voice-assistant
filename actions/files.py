@@ -39,7 +39,7 @@ def find_files(query, directory=None):
     if results:
         # Open the folder containing the first result
         first = results[0]
-        subprocess.Popen(f'explorer /select,"{first}"', shell=True)
+        subprocess.Popen(["explorer", f"/select,{first}"], shell=False)
         if len(results) == 1:
             return f"Found {os.path.basename(first)} and opened its location."
         return f"Found {len(results)} files. Showing the first one: {os.path.basename(first)}."

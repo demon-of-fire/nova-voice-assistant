@@ -22,8 +22,18 @@ class Api:
     # --- Main actions ---
 
     def activate(self):
-        if self._ui.on_activate and self._ui._state == "idle" and not self._ui._muted:
-            threading.Thread(target=self._ui.on_activate, daemon=True).start()
+        # Lock guards against double-activation (hotkey + voice + button races)
+        lock = getattr(self._ui, "_activate_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            self._ui._activate_lock = lock
+        if not lock.acquire(blocking=False):
+            return
+        try:
+            if self._ui.on_activate and self._ui._state == "idle" and not self._ui._muted:
+                threading.Thread(target=self._ui.on_activate, daemon=True).start()
+        finally:
+            lock.release()
 
     def toggle_mute(self):
         if self._ui.on_mute_toggle:
@@ -201,13 +211,20 @@ class AssistantUI:
 
         index_path = os.path.join(_WEB_DIR, "index.html")
 
+        # Center horizontally on the real screen (fall back to 1920 for safety)
+        try:
+            import ctypes
+            screen_w = ctypes.windll.user32.GetSystemMetrics(0)
+        except Exception:
+            screen_w = 1920
+
         self._window = webview.create_window(
             "Nova Voice Assistant",
             url=index_path,
             js_api=self._api,
             width=config.PILL_WIDTH,
             height=config.PILL_HEIGHT,
-            x=(1920 // 2 - config.PILL_WIDTH // 2),
+            x=(screen_w // 2 - config.PILL_WIDTH // 2),
             y=30,
             resizable=True,
             on_top=True,
@@ -323,7 +340,7 @@ class AssistantUI:
         self._apikey_result = ""
         self._apikey_event.clear()
         self._eval("showApiKeyView();")
-        self._apikey_event.wait()
+        self._apikey_event.wait(timeout=300)
         return self._apikey_result
 
     @property

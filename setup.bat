@@ -45,6 +45,6 @@ python build.py
 echo.
 echo ========================================
 echo   Setup complete!
-echo   Run dist\Nova.exe to start Nova.
+echo   Run dist\Nova.exe to start Nova (or open the dist folder).
 echo ========================================
 pause
