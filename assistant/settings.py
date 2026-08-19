@@ -45,12 +45,10 @@ DEFAULTS = {
     "allow_network": True,          # network info, wifi scan, ping
     "allow_code_execution": False,  # run arbitrary Python code (dangerous)
     "allow_screen_control": False,  # screen sharing + mouse control
-    "ai_mode": "auto",             # "auto", "gemini_only", "ollama_only"
     "gemini_model": "gemini-2.5-flash",  # which Gemini model to use
-    "ollama_model": "llama3.2",    # which Ollama model to use
     "tts_rate": 160,
     "tts_volume": 1.0,
-    "tts_voice": "en-US-GuyNeural",  # Edge TTS neural voice
+    "tts_voice": "",                # Windows SAPI voice token id; blank uses default
     "stt_engine": "google",       # "google" (online), "sphinx" (offline/light), "whisper" (offline/accurate)
     "wake_word_enabled": False,
     "start_minimized": False,

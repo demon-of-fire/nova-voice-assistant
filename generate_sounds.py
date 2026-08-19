@@ -268,6 +268,25 @@ def gen_error():
     return samples
 
 
+def gen_not_understood():
+    """Gentle 'hmm?' — a soft rising-then-falling two-note query.
+
+    Sounds like a polite question, conveying 'I heard something
+    but didn't understand' without being annoying.
+    """
+    n1 = note(600, 0.08, volume=0.4, attack=0.003, decay=0.02, sustain=0.3, release=0.04,
+              harmonics=[(1, 1.0), (2, 0.3), (3, 0.1)])
+    gap = silence(0.04)
+    n2 = note(900, 0.14, volume=0.35, attack=0.003, decay=0.03, sustain=0.3, release=0.08,
+              harmonics=[(1, 1.0), (2, 0.25), (3, 0.08)])
+    n3 = note(700, 0.18, volume=0.3, attack=0.003, decay=0.04, sustain=0.2, release=0.1,
+              harmonics=[(1, 1.0), (2, 0.2)])
+
+    samples = n1 + gap + n2 + silence(0.03) + n3
+    samples = lowpass(samples, 5000)
+    return samples
+
+
 # ============================================================
 # MAIN
 # ============================================================
@@ -276,6 +295,7 @@ def main():
     generators = {
         "activate": gen_activate,
         "deactivate": gen_deactivate,
+        "not_understood": gen_not_understood,
         "listening": gen_listening,
         "thinking": gen_thinking,
         "mute": gen_mute,

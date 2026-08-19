@@ -228,13 +228,39 @@ body {
   display: block;
 }
 
-/* Live region for screen reader announcements */
-#sr-announce {
+/* Screen reader only utilities */
+.sr-only,
+#sr-announce,
+#sr-status {
   position: absolute;
   left: -9999px;
   width: 1px;
   height: 1px;
   overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Skip link for keyboard users */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 8px;
+  background: var(--accent);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 0 0 4px 4px;
+  z-index: 200;
+  font-size: 13px;
+  text-decoration: none;
+  transition: top 0.2s;
+}
+
+.skip-link:focus {
+  top: 0;
+  outline: 2px solid white;
+  outline-offset: 2px;
 }
 
 /* ===== SETTINGS VIEW ===== */
@@ -321,6 +347,19 @@ body.light .setting-heading {
 
 .setting-heading:first-child {
   margin-top: 4px;
+}
+
+.integration-status {
+  background: var(--bg-alt);
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 4px 0 10px;
+  padding: 10px 12px;
+}
+
+.status-row {
+  padding: 2px 0;
 }
 
 /* Toggle and choice buttons in settings */

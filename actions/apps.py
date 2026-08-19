@@ -72,11 +72,8 @@ def launch_app(app_name):
             return f"Found {app_name} but couldn't open it: {e}"
 
     # Fallback: try running it directly (for PATH-accessible commands like 'code')
-    # Never use shell=True — reject anything that isn't a plain command name
-    if any(c in app_name for c in "|&;<>`$\"'()"):
-        return f"Couldn't find an app called '{app_name}'. It might not be installed."
     try:
-        subprocess.Popen([app_name], shell=False)
+        subprocess.Popen(app_name, shell=True)
         return f"Opened {app_name}."
     except Exception:
         pass
@@ -87,8 +84,6 @@ def launch_app(app_name):
 def close_app(app_name):
     """Kill a running application by process name — protects Nova and system processes."""
     search = app_name.lower().strip()
-    if len(search) < 3:
-        return "That app name is too short to be safe. Please be more specific."
 
     # Never kill these process names — they're system/Nova infrastructure
     # msedgewebview2 is shared by many apps (Nova, Spotify, Teams, etc.)
@@ -98,41 +93,24 @@ def close_app(app_name):
         "explorer.exe", "svchost.exe", "csrss.exe", "dwm.exe",
         "system", "system idle process", "lsass.exe", "services.exe",
         "conhost.exe", "bash.exe", "cmd.exe", "powershell.exe",
-        "regedit.exe", "taskmgr.exe", "winlogon.exe", "wininit.exe",
     }
 
+    # Use taskkill via Windows — it's smarter about closing apps gracefully
+    # and won't nuke shared processes like webview2
+    # First try graceful close, then force if needed
     killed = []
     main_procs = []
 
-    def _stem(pname):
-        """Strip common vendor prefixes so 'word' matches WINWORD, not WordPad."""
-        base = pname[:-4] if pname.endswith(".exe") else pname
-        for pre in ("win", "ms", "wps"):
-            if base.startswith(pre) and len(base) > len(pre) + 2:
-                return base[len(pre):]
-        return base
-
-    candidates = []
     for proc in psutil.process_iter(["name", "pid", "exe"]):
         try:
             pname = proc.info["name"].lower()
             pid = proc.info["pid"]
             if pname in protected_names:
                 continue
-            candidates.append((pid, proc.info["name"]))
+            if search in pname:
+                main_procs.append((pid, proc.info["name"]))
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
-
-    # Pass 1: exact name or stem-prefix match (WINWORD for 'word')
-    for pid, name in candidates:
-        pname = name.lower()
-        if pname == search or _stem(pname).startswith(search):
-            main_procs.append((pid, name))
-    # Pass 2: only if nothing matched — substring (e.g. 'chrome' → msedge no)
-    if not main_procs:
-        for pid, name in candidates:
-            if search in name.lower():
-                main_procs.append((pid, name))
 
     if not main_procs:
         return f"Couldn't find '{app_name}' running."

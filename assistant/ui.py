@@ -22,18 +22,8 @@ class Api:
     # --- Main actions ---
 
     def activate(self):
-        # Lock guards against double-activation (hotkey + voice + button races)
-        lock = getattr(self._ui, "_activate_lock", None)
-        if lock is None:
-            lock = threading.Lock()
-            self._ui._activate_lock = lock
-        if not lock.acquire(blocking=False):
-            return
-        try:
-            if self._ui.on_activate and self._ui._state == "idle" and not self._ui._muted:
-                threading.Thread(target=self._ui.on_activate, daemon=True).start()
-        finally:
-            lock.release()
+        if self._ui.on_activate and self._ui._state == "idle" and not self._ui._muted:
+            threading.Thread(target=self._ui.on_activate, daemon=True).start()
 
     def toggle_mute(self):
         if self._ui.on_mute_toggle:
@@ -94,9 +84,14 @@ class Api:
         self._ui._settings.set(key, value)
         if key == "gemini_api_key":
             os.environ["GEMINI_API_KEY"] = value
+        if self._ui.on_setting_changed:
+            self._ui.on_setting_changed(key, value)
 
     def toggle_setting(self, key):
-        return self._ui._settings.toggle(key)
+        value = self._ui._settings.toggle(key)
+        if self._ui.on_setting_changed:
+            self._ui.on_setting_changed(key, value)
+        return value
 
     def get_voices(self):
         try:
@@ -113,6 +108,95 @@ class Api:
                     if "not installed" not in en]
         except Exception:
             return [["google", "Google (online) — Needs internet"]]
+
+    # --- Windows integration ---
+
+    def get_windows_integration(self):
+        try:
+            from assistant.platform_integration import status
+            return status(self._ui._settings)
+        except Exception as e:
+            return {"error": str(e)}
+
+    def create_desktop_shortcut(self):
+        try:
+            from assistant.platform_integration import create_desktop_shortcut
+            ok, message = create_desktop_shortcut()
+            return {"ok": ok, "message": message}
+        except Exception as e:
+            return {"ok": False, "message": str(e)}
+
+    def create_start_menu_shortcut(self):
+        try:
+            from assistant.platform_integration import create_start_menu_shortcut
+            ok, message = create_start_menu_shortcut()
+            return {"ok": ok, "message": message}
+        except Exception as e:
+            return {"ok": False, "message": str(e)}
+
+    def set_start_with_windows(self, enabled):
+        try:
+            from assistant.platform_integration import set_start_with_windows
+            ok, message = set_start_with_windows(bool(enabled))
+            return {"ok": ok, "message": message}
+        except Exception as e:
+            return {"ok": False, "message": str(e)}
+
+    def repair_native_integration(self):
+        try:
+            from assistant.platform_integration import repair_native_integration
+            ok, message = repair_native_integration(self._ui._settings)
+            return {"ok": ok, "message": message}
+        except Exception as e:
+            return {"ok": False, "message": str(e)}
+
+    def disconnect_native_integration(self):
+        try:
+            from assistant.platform_integration import disconnect_native_integration
+            ok, message = disconnect_native_integration()
+            return {"ok": ok, "message": message}
+        except Exception as e:
+            return {"ok": False, "message": str(e)}
+
+    def register_uri_handler(self):
+        try:
+            from assistant.platform_integration import register_protocol_handler
+            ok, message = register_protocol_handler()
+            return {"ok": ok, "message": message}
+        except Exception as e:
+            return {"ok": False, "message": str(e)}
+
+    def register_app_alias(self):
+        try:
+            from assistant.platform_integration import register_app_path
+            ok, message = register_app_path()
+            return {"ok": ok, "message": message}
+        except Exception as e:
+            return {"ok": False, "message": str(e)}
+
+    def open_install_location(self):
+        try:
+            from assistant.platform_integration import open_install_location
+            ok, message = open_install_location()
+            return {"ok": ok, "message": message}
+        except Exception as e:
+            return {"ok": False, "message": str(e)}
+
+    def open_startup_folder(self):
+        try:
+            from assistant.platform_integration import open_startup_folder
+            ok, message = open_startup_folder()
+            return {"ok": ok, "message": message}
+        except Exception as e:
+            return {"ok": False, "message": str(e)}
+
+    def open_logs_folder(self):
+        try:
+            from assistant.platform_integration import open_logs_folder
+            ok, message = open_logs_folder()
+            return {"ok": ok, "message": message}
+        except Exception as e:
+            return {"ok": False, "message": str(e)}
 
     # --- Screen sharing ---
 
@@ -190,6 +274,7 @@ class AssistantUI:
         # Callbacks (set by core.py)
         self.on_activate = None
         self.on_mute_toggle = None
+        self.on_setting_changed = None
         self._process_text_cb = None
         self._brain_ref = None  # Set by core.py for screen sharing toggle
 
@@ -211,12 +296,12 @@ class AssistantUI:
 
         index_path = os.path.join(_WEB_DIR, "index.html")
 
-        # Center horizontally on the real screen (fall back to 1920 for safety)
+        sw = 1920
         try:
             import ctypes
-            screen_w = ctypes.windll.user32.GetSystemMetrics(0)
+            sw = ctypes.windll.user32.GetSystemMetrics(0)
         except Exception:
-            screen_w = 1920
+            pass
 
         self._window = webview.create_window(
             "Nova Voice Assistant",
@@ -224,7 +309,7 @@ class AssistantUI:
             js_api=self._api,
             width=config.PILL_WIDTH,
             height=config.PILL_HEIGHT,
-            x=(screen_w // 2 - config.PILL_WIDTH // 2),
+            x=(sw // 2 - config.PILL_WIDTH // 2),
             y=30,
             resizable=True,
             on_top=True,
@@ -305,6 +390,26 @@ class AssistantUI:
 
     def run(self):
         """Start the webview event loop. Blocks until window is closed."""
+        # Check that pythonnet/clr is available before calling webview.start()
+        # (pywebview requires it on Windows and the error from deep inside the
+        # C call stack is confusing to debug.)
+        try:
+            import clr  # noqa: F401
+        except ImportError:
+            try:
+                import webview.errors as _wv_err
+                raise _wv_err.WebViewException(
+                    "pythonnet is not available.\n\n"
+                    "Nova requires pythonnet (clr module) on Windows.\n"
+                    "Run:  pip install pythonnet\n\n"
+                    "If using the packaged .exe, rebuild with:\n"
+                    "  --collect-all pythonnet --collect-all clr_loader"
+                )
+            except ImportError:
+                raise ImportError(
+                    "pythonnet (clr module) is not installed.\n"
+                    "Run: pip install pythonnet"
+                )
         webview.start(debug=False)
 
     # --- Confirmation dialog (called from brain.py via confirmation.py) ---
@@ -340,7 +445,7 @@ class AssistantUI:
         self._apikey_result = ""
         self._apikey_event.clear()
         self._eval("showApiKeyView();")
-        self._apikey_event.wait(timeout=300)
+        self._apikey_event.wait()
         return self._apikey_result
 
     @property

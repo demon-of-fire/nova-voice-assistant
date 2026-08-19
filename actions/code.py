@@ -3,20 +3,7 @@
 import subprocess
 import os
 import sys
-import shutil
 from actions.confirmation import ask_confirmation
-
-
-def _python_interp():
-    """Find a real Python interpreter. In a frozen (PyInstaller) build
-    sys.executable points at Nova.exe, which can't run `-c` code."""
-    if not getattr(sys, "frozen", False):
-        return sys.executable
-    for cand in ("pythonw", "python", "py"):
-        p = shutil.which(cand)
-        if p:
-            return p
-    return sys.executable
 
 
 def run_python(code):
@@ -26,7 +13,7 @@ def run_python(code):
 
     try:
         result = subprocess.run(
-            [_python_interp(), "-c", code],
+            [sys.executable, "-c", code],
             capture_output=True, text=True, timeout=30,
         )
         output = result.stdout.strip()

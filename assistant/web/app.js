@@ -1,8 +1,13 @@
 /* Nova Voice Assistant — Frontend Logic */
 
-// Screen reader announcement via ARIA live region
-function announce(msg) {
-  const el = document.getElementById("sr-announce");
+// Screen reader announcement via ARIA live regions
+function announce(msg, polite) {
+  if (!msg) return;
+  // Use assertive for urgent messages, polite for status
+  const id = polite ? "sr-status" : "sr-announce";
+  const el = document.getElementById(id);
+  if (!el) return;
+  // Clear + set with delay triggers screen reader announcement
   el.textContent = "";
   setTimeout(() => { el.textContent = msg; }, 50);
 }
@@ -18,6 +23,7 @@ function updateState(state, status, response) {
   const orb = document.getElementById("orb");
   const statusEl = document.getElementById("status-text");
   const responseEl = document.getElementById("response-area");
+  const mainEl = document.getElementById("main-view");
 
   // Update orb class
   orb.className = "orb " + (isMuted ? "muted" : state);
@@ -29,6 +35,7 @@ function updateState(state, status, response) {
   if (response) {
     responseEl.textContent = response;
     responseEl.classList.add("visible");
+    // Screen reader announcement for response
     announce(response);
     // Auto-collapse after 8 seconds
     clearTimeout(window._collapseTimer);
@@ -37,16 +44,25 @@ function updateState(state, status, response) {
         responseEl.classList.remove("visible");
       }
     }, 8000);
-  } else if (state === "idle" && response === "") {
+  } else if (state === "idle") {
     responseEl.classList.remove("visible");
   }
 
-  // Announce state changes
-  if (state === "listening") {
-    announce("Listening");
-  } else if (state === "thinking" && response) {
-    announce("Processing: " + response);
+  // Update aria-label on main-view for screen reader context
+  if (mainEl) {
+    mainEl.setAttribute("aria-label", "Nova Voice Assistant - " + (status || state));
   }
+
+  // Announce state changes for screen readers
+  const stateMessages = {
+    "idle": status || "Nova ready",
+    "listening": "Listening for your command",
+    "thinking": "Processing your request",
+    "speaking": "Nova is speaking",
+    "error": status || "An error occurred",
+  };
+  const msg = stateMessages[state] || status || state;
+  announce(msg);
 }
 
 function updateMuted(muted) {
@@ -55,12 +71,12 @@ function updateMuted(muted) {
   const orb = document.getElementById("orb");
 
   if (muted) {
-    btn.textContent = "Muted (F3)";
+    btn.textContent = "Muted";
     btn.classList.add("muted");
     orb.className = "orb muted";
     announce("Microphone muted");
   } else {
-    btn.textContent = "Mic on (F3)";
+    btn.textContent = "Mic on";
     btn.classList.remove("muted");
     orb.className = "orb " + currentState;
     announce("Microphone on");
@@ -86,14 +102,14 @@ function onScreenShare() {
   pywebview.api.toggle_screen_share().then(active => {
     const btn = document.getElementById("btn-screen");
     if (active) {
-      btn.textContent = "Screen ON (F5)";
+      btn.textContent = "Screen ON";
       btn.classList.add("active");
       btn.setAttribute("aria-label", "Screen sharing on. Nova can see your screen. Press to turn off.");
       announce("Screen sharing on. Nova can now see your screen.");
     } else {
-      btn.textContent = "Screen (F5)";
+      btn.textContent = "Screen";
       btn.classList.remove("active");
-      btn.setAttribute("aria-label", "Screen sharing off. Press to toggle screen sharing. Shortcut F5.");
+      btn.setAttribute("aria-label", "Screen sharing off. Press to toggle screen sharing. Shortcut Ctrl Shift S.");
       announce("Screen sharing off.");
     }
   });
@@ -149,6 +165,7 @@ function buildSettings() {
   content.innerHTML = "";
 
   const tabs = [
+    { id: "integration", label: "Windows", build: buildWindowsIntegration },
     { id: "ai", label: "AI Models", build: buildAIModels },
     { id: "perms", label: "Permissions", build: buildPermissions },
     { id: "voice", label: "Voice", build: buildVoice },
@@ -296,13 +313,6 @@ function choiceGroup(parent, label, key, choices) {
 }
 
 function buildAIModels(panel) {
-  heading(panel, "AI Backend");
-  choiceGroup(panel, "AI Mode", "ai_mode", [
-    ["auto", "Auto: Gemini for actions, Ollama for chat"],
-    ["gemini_only", "Gemini only: cloud AI, can do PC actions"],
-    ["ollama_only", "Ollama only: local AI, free, chat only"],
-  ]);
-
   heading(panel, "Gemini Model");
   choiceGroup(panel, "Gemini Model", "gemini_model", [
     ["gemini-2.5-flash", "Gemini 2.5 Flash — fast, recommended"],
@@ -355,33 +365,161 @@ function buildAIModels(panel) {
   });
   row.appendChild(saveBtn);
   panel.appendChild(row);
+}
 
-  heading(panel, "Ollama Model");
-  // Fetch available models or show defaults
-  const ollamaModels = ["llama3.2", "llama3.1", "mistral", "mixtral", "phi3", "gemma2", "codellama"];
-  choiceGroup(panel, "Ollama Model", "ollama_model", ollamaModels.map(m => [m, m]));
+function buildWindowsIntegration(panel) {
+  heading(panel, "Reach Nova");
 
-  const oRow = document.createElement("div");
-  oRow.className = "input-row";
-  const oInput = document.createElement("input");
-  oInput.type = "text";
-  oInput.value = settingsData.ollama_model || "llama3.2";
-  oInput.setAttribute("aria-label", "Custom Ollama model name");
-  oRow.appendChild(oInput);
+  const status = document.createElement("div");
+  status.className = "integration-status";
+  status.setAttribute("aria-live", "polite");
+  status.textContent = "Checking Windows integration...";
+  panel.appendChild(status);
 
-  const oBtn = document.createElement("button");
-  oBtn.className = "btn btn-save";
-  oBtn.textContent = "Save model";
-  oBtn.addEventListener("click", async () => {
-    const m = oInput.value.trim();
-    if (m) {
-      await pywebview.api.set_setting("ollama_model", m);
-      settingsData.ollama_model = m;
-      announce("Saved: " + m);
+  const refresh = async () => {
+    const data = await pywebview.api.get_windows_integration();
+    if (data.error) {
+      status.textContent = "Integration status unavailable: " + data.error;
+      return;
     }
+    status.innerHTML = "";
+    [
+      ["Platform", data.platform || "Windows"],
+      ["Installed app", data.installed ? "Ready" : "Portable run"],
+      ["Desktop shortcut", data.desktop_shortcut ? "Ready" : "Not created"],
+      ["Start Menu shortcut", data.start_menu_shortcut ? "Ready" : "Not created"],
+      ["Start with Windows", data.start_with_windows ? "On" : "Off"],
+      ["nova:// links", data.uri_protocol ? "Registered" : "Not registered"],
+      ["Win+R Nova.exe", data.app_path_alias ? "Registered" : "Not registered"],
+      ["Start minimized", data.start_minimized ? "On" : "Off"],
+      ["Wake word", data.wake_word_enabled ? "On" : "Off"],
+    ].forEach(([label, value]) => {
+      const row = document.createElement("div");
+      row.className = "status-row";
+      row.textContent = label + ": " + value;
+      status.appendChild(row);
+    });
+  };
+
+  const repair = document.createElement("button");
+  repair.className = "setting-btn on";
+  repair.textContent = "Repair all native integration";
+  repair.addEventListener("click", async () => {
+    announce("Repairing Nova integration.");
+    const result = await pywebview.api.repair_native_integration();
+    announce(result.ok ? "Nova integration repaired." : "Repair failed. " + result.message);
+    settingsData.start_minimized = true;
+    refresh();
   });
-  oRow.appendChild(oBtn);
-  panel.appendChild(oRow);
+  panel.appendChild(repair);
+
+  const desktop = document.createElement("button");
+  desktop.className = "setting-btn";
+  desktop.textContent = "Create desktop shortcut";
+  desktop.addEventListener("click", async () => {
+    announce("Creating desktop shortcut.");
+    const result = await pywebview.api.create_desktop_shortcut();
+    announce(result.ok ? "Desktop shortcut ready." : "Desktop shortcut failed. " + result.message);
+    refresh();
+  });
+  panel.appendChild(desktop);
+
+  const startMenu = document.createElement("button");
+  startMenu.className = "setting-btn";
+  startMenu.textContent = "Create Start Menu shortcut";
+  startMenu.addEventListener("click", async () => {
+    announce("Creating Start Menu shortcut.");
+    const result = await pywebview.api.create_start_menu_shortcut();
+    announce(result.ok ? "Start Menu shortcut ready." : "Start Menu shortcut failed. " + result.message);
+    refresh();
+  });
+  panel.appendChild(startMenu);
+
+  const startup = document.createElement("button");
+  startup.className = "setting-btn";
+  startup.textContent = "Turn on Start with Windows";
+  startup.addEventListener("click", async () => {
+    announce("Turning on Start with Windows.");
+    const result = await pywebview.api.set_start_with_windows(true);
+    announce(result.ok ? "Nova will start with Windows." : "Startup shortcut failed. " + result.message);
+    refresh();
+  });
+  panel.appendChild(startup);
+
+  const startupOff = document.createElement("button");
+  startupOff.className = "setting-btn";
+  startupOff.textContent = "Turn off Start with Windows";
+  startupOff.addEventListener("click", async () => {
+    announce("Turning off Start with Windows.");
+    const result = await pywebview.api.set_start_with_windows(false);
+    announce(result.ok ? "Nova will not start with Windows." : "Could not update startup. " + result.message);
+    refresh();
+  });
+  panel.appendChild(startupOff);
+
+  const uri = document.createElement("button");
+  uri.className = "setting-btn";
+  uri.textContent = "Register nova:// links";
+  uri.addEventListener("click", async () => {
+    announce("Registering Nova links.");
+    const result = await pywebview.api.register_uri_handler();
+    announce(result.ok ? "Nova links registered." : "Nova links failed. " + result.message);
+    refresh();
+  });
+  panel.appendChild(uri);
+
+  const alias = document.createElement("button");
+  alias.className = "setting-btn";
+  alias.textContent = "Register Win+R Nova.exe";
+  alias.addEventListener("click", async () => {
+    announce("Registering Win R alias.");
+    const result = await pywebview.api.register_app_alias();
+    announce(result.ok ? "Win R alias registered." : "Win R alias failed. " + result.message);
+    refresh();
+  });
+  panel.appendChild(alias);
+
+  const openInstall = document.createElement("button");
+  openInstall.className = "setting-btn";
+  openInstall.textContent = "Open installed Nova folder";
+  openInstall.addEventListener("click", async () => {
+    const result = await pywebview.api.open_install_location();
+    announce(result.ok ? "Opening Nova folder." : "Could not open Nova folder. " + result.message);
+  });
+  panel.appendChild(openInstall);
+
+  const openStartup = document.createElement("button");
+  openStartup.className = "setting-btn";
+  openStartup.textContent = "Open Windows Startup folder";
+  openStartup.addEventListener("click", async () => {
+    const result = await pywebview.api.open_startup_folder();
+    announce(result.ok ? "Opening Startup folder." : "Could not open Startup folder. " + result.message);
+  });
+  panel.appendChild(openStartup);
+
+  const openLogs = document.createElement("button");
+  openLogs.className = "setting-btn";
+  openLogs.textContent = "Open Nova logs folder";
+  openLogs.addEventListener("click", async () => {
+    const result = await pywebview.api.open_logs_folder();
+    announce(result.ok ? "Opening logs folder." : "Could not open logs folder. " + result.message);
+  });
+  panel.appendChild(openLogs);
+
+  const disconnect = document.createElement("button");
+  disconnect.className = "setting-btn off";
+  disconnect.textContent = "Disconnect startup and shell integration";
+  disconnect.addEventListener("click", async () => {
+    announce("Removing startup and shell integration.");
+    const result = await pywebview.api.disconnect_native_integration();
+    announce(result.ok ? "Startup and shell integration removed." : "Cleanup failed. " + result.message);
+    refresh();
+  });
+  panel.appendChild(disconnect);
+
+  toggleBtn(panel, "Start minimized to tray", "start_minimized");
+  toggleBtn(panel, "Wake word — say Hey Nova to activate", "wake_word_enabled");
+  refresh();
 }
 
 function buildPermissions(panel) {
@@ -476,10 +614,8 @@ function buildVoice(panel) {
 
 function buildGeneral(panel) {
   heading(panel, "Behavior");
-  toggleBtn(panel, "Wake word — say Hey Nova to activate", "wake_word_enabled");
   toggleBtn(panel, "Follow-up mode — keep listening after response", "follow_up_mode");
   toggleBtn(panel, "Confirm before dangerous actions", "confirm_actions");
-  toggleBtn(panel, "Start minimized to tray", "start_minimized");
 }
 
 function buildAppearance(panel) {
@@ -509,16 +645,44 @@ function buildAppearance(panel) {
 
 // ===== CONFIRMATION MODAL =====
 
+function trapFocus(overlayId) {
+  const overlay = document.getElementById(overlayId);
+  if (!overlay) return;
+  const focusable = overlay.querySelectorAll('button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  if (focusable.length === 0) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  overlay.addEventListener("keydown", function trap(e) {
+    if (e.key !== "Tab") return;
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }, { once: false });
+}
+
 function showConfirmation(description) {
   const overlay = document.getElementById("confirm-modal");
   document.getElementById("confirm-desc").textContent = description;
   overlay.classList.add("active");
   announce("Confirmation required. " + description + ". Press Enter to confirm, Escape to cancel.");
-  setTimeout(() => document.getElementById("btn-confirm-yes").focus(), 100);
+  setTimeout(() => {
+    document.getElementById("btn-confirm-yes").focus();
+    trapFocus("confirm-modal");
+  }, 100);
 }
 
 function hideConfirmation() {
   document.getElementById("confirm-modal").classList.remove("active");
+}
+
+function cancelConfirmation() {
+  pywebview.api.confirm_response(false);
+  hideConfirmation();
+  announce("Cancelled");
 }
 
 // ===== TYPE-TO-CHAT MODAL =====
@@ -534,6 +698,7 @@ function showTypeChat() {
 
 function hideTypeChat() {
   document.getElementById("type-modal").classList.remove("active");
+  announce("Prompt closed");
 }
 
 function sendTypedMessage() {
@@ -581,6 +746,49 @@ function exitWithoutSaving() {
 }
 
 // ===== KEYBOARD SHORTCUTS =====
+function isActive(id) {
+  const el = document.getElementById(id);
+  return !!(el && el.classList.contains("active"));
+}
+
+function closeActivePrompt() {
+  if (isActive("confirm-modal")) {
+    cancelConfirmation();
+    return true;
+  }
+
+  if (isActive("type-modal")) {
+    hideTypeChat();
+    return true;
+  }
+
+  if (isActive("settings-view")) {
+    closeSettings();
+    return true;
+  }
+
+  if (isActive("apikey-view")) {
+    exitWithoutSaving();
+    return true;
+  }
+
+  onHide();
+  return true;
+}
+
+function handleEscape(e) {
+  if (e.key !== "Escape" && e.code !== "Escape") {
+    return;
+  }
+
+  e.preventDefault();
+  e.stopPropagation();
+  if (typeof e.stopImmediatePropagation === "function") {
+    e.stopImmediatePropagation();
+  }
+  closeActivePrompt();
+}
+
 document.addEventListener("keydown", (e) => {
   // Block browser shortcuts that would close/navigate the webview
   if ((e.ctrlKey && (e.key === "w" || e.key === "W")) ||
@@ -591,27 +799,8 @@ document.addEventListener("keydown", (e) => {
     return;
   }
 
-  // Global Escape closes modals/settings
-  if (e.key === "Escape") {
-    const confirmModal = document.getElementById("confirm-modal");
-    const typeModal = document.getElementById("type-modal");
-    const settingsView = document.getElementById("settings-view");
-
-    if (confirmModal.classList.contains("active")) {
-      e.preventDefault();
-      pywebview.api.confirm_response(false);
-      hideConfirmation();
-    } else if (typeModal.classList.contains("active")) {
-      e.preventDefault();
-      hideTypeChat();
-    } else if (settingsView.classList.contains("active")) {
-      e.preventDefault();
-      closeSettings();
-    } else {
-      onHide();
-    }
-  }
-});
+  handleEscape(e);
+}, true);
 
 // Called by Python when pywebview is ready
 window.addEventListener("pywebviewready", () => {

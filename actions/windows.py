@@ -106,8 +106,6 @@ def switch_window(window_title):
 
 
 def snap_window(direction, window_title=None):
-    if direction not in ("left", "right"):
-        return f"Snap direction must be 'left' or 'right', got '{direction}'."
     hwnd = _find_window(window_title)
     if not hwnd:
         return f"Couldn't find a window matching '{window_title}'."

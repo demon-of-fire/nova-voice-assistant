@@ -1,23 +1,93 @@
-"""File operations: open folders, find files, clipboard."""
+"""File Explorer operations: open/reveal paths, find files, clipboard."""
 
 import os
 import subprocess
 import ctypes
 
 
+def _expand(path):
+    return os.path.abspath(os.path.expandvars(os.path.expanduser(path)))
+
+
+def _quote_for_explorer(path):
+    return os.path.normpath(path)
+
+
+def _select_arg(path):
+    return f"/select,{_quote_for_explorer(path)}"
+
+
+def list_drives():
+    """List available Windows drives."""
+    drives = []
+    bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+    for i in range(26):
+        if bitmask & (1 << i):
+            drive = f"{chr(65 + i)}:\\"
+            dtype = ctypes.windll.kernel32.GetDriveTypeW(drive)
+            label = {
+                2: "removable",
+                3: "fixed",
+                4: "network",
+                5: "disc",
+                6: "ram",
+            }.get(dtype, "unknown")
+            drives.append(f"{drive} ({label})")
+    return "Available drives: " + ", ".join(drives) if drives else "No drives found."
+
+
+def open_file_explorer(path=None):
+    """Open File Explorer at a folder, file location, or This PC."""
+    if not path:
+        subprocess.Popen(["explorer.exe", "shell:MyComputerFolder"])
+        return "Opened File Explorer."
+
+    full = _expand(path)
+    if os.path.isdir(full):
+        subprocess.Popen(["explorer.exe", _quote_for_explorer(full)])
+        return f"Opened folder {full}."
+    if os.path.isfile(full):
+        subprocess.Popen(["explorer.exe", _select_arg(full)])
+        return f"Opened the location of {os.path.basename(full)}."
+    return f"Path not found: {path}"
+
+
 def open_folder(path):
     """Open a folder in File Explorer."""
-    expanded = os.path.expandvars(os.path.expanduser(path))
+    expanded = _expand(path)
     if os.path.isdir(expanded):
-        os.startfile(expanded)
+        subprocess.Popen(["explorer.exe", _quote_for_explorer(expanded)])
         return f"Opened {expanded}."
     return f"Folder not found: {path}"
 
 
+def open_path(path):
+    """Open a file, folder, URL shortcut, or app-associated document."""
+    full = _expand(path)
+    if not os.path.exists(full):
+        return f"Path not found: {path}"
+    try:
+        os.startfile(full)
+        return f"Opened {os.path.basename(full) or full}."
+    except Exception as e:
+        return f"Couldn't open {path}: {e}"
+
+
+def reveal_path(path):
+    """Reveal a file or folder in File Explorer and select it."""
+    full = _expand(path)
+    if not os.path.exists(full):
+        return f"Path not found: {path}"
+    try:
+        subprocess.Popen(["explorer.exe", _select_arg(full)])
+        return f"Showing {os.path.basename(full) or full} in File Explorer."
+    except Exception as e:
+        return f"Couldn't show {path}: {e}"
+
+
 def find_files(query, directory=None):
     """Search for files matching a name pattern."""
-    search_dir = directory or os.path.expanduser("~")
-    search_dir = os.path.expandvars(search_dir)
+    search_dir = _expand(directory) if directory else os.path.expanduser("~")
     results = []
 
     try:
@@ -39,7 +109,7 @@ def find_files(query, directory=None):
     if results:
         # Open the folder containing the first result
         first = results[0]
-        subprocess.Popen(["explorer", f"/select,{first}"], shell=False)
+        subprocess.Popen(["explorer.exe", _select_arg(first)])
         if len(results) == 1:
             return f"Found {os.path.basename(first)} and opened its location."
         return f"Found {len(results)} files. Showing the first one: {os.path.basename(first)}."

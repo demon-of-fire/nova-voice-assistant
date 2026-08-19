@@ -100,30 +100,34 @@ def lock_pc():
 
 def media_play_pause():
     """Press the system media play/pause key."""
-    import keyboard as kb
-    kb.send("play/pause media")
+    _send_media_key(0xB3)
     return "Toggled play/pause."
 
 
 def media_next():
     """Press the system media next track key."""
-    import keyboard as kb
-    kb.send("next track")
+    _send_media_key(0xB0)
     return "Skipped to next track."
 
 
 def media_previous():
     """Press the system media previous track key."""
-    import keyboard as kb
-    kb.send("previous track")
+    _send_media_key(0xB1)
     return "Went back to previous track."
 
 
 def media_stop():
     """Press the system media stop key."""
-    import keyboard as kb
-    kb.send("stop media")
+    _send_media_key(0xB2)
     return "Stopped media playback."
+
+
+def _send_media_key(vk):
+    """Send a Windows multimedia virtual key without relying on hooks."""
+    KEYEVENTF_KEYUP = 0x0002
+    user32 = ctypes.windll.user32
+    user32.keybd_event(vk, 0, 0, 0)
+    user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
 
 
 # ── Assistant self-control ─────────────────────────────────────────────────

@@ -39,7 +39,7 @@ _nvda = None
 _nvda_tried = False
 
 def _load_nvda():
-    """Load NVDA controller DLL lazily so COM init by pyttsx3 happens first."""
+    """Load NVDA controller DLL lazily so COM initialization stays predictable."""
     global _nvda, _nvda_tried
     if _nvda_tried:
         return
@@ -137,7 +137,7 @@ def announce(text):
     if not text:
         return
 
-    # Lazy load on first use (after pyttsx3/comtypes have initialized COM)
+    # Lazy load on first use after COM-based helpers have had a chance to initialize.
     _load_nvda()
     _load_tolk()
 
@@ -182,14 +182,33 @@ def announce_state(state, detail=""):
     """Announce a state change with a human-readable message."""
     messages = {
         "idle": "Nova ready",
-        "listening": "Listening",
-        "thinking": "Processing",
+        "listening": "Listening for your command",
+        "listening_followup": "Listening for follow up",
+        "thinking": "Processing your request",
         "speaking": "Nova speaking",
         "muted": "Microphone muted",
         "unmuted": "Microphone on",
         "error": "Error occurred",
+        "apikey_needed": "Gemini API key needed. Open Settings to set it up.",
+        "screen_on": "Screen sharing on. Nova can see your screen.",
+        "screen_off": "Screen sharing off.",
     }
     msg = messages.get(state, state)
     if detail:
         msg = f"{msg}: {detail}"
     announce(msg)
+
+
+def announce_error(error_text):
+    """Announce an error to the screen reader."""
+    announce(f"Error: {error_text}")
+
+
+def announce_warning(warning_text):
+    """Announce a warning to the screen reader."""
+    announce(f"Warning: {warning_text}")
+
+
+def announce_success(success_text):
+    """Announce a success message to the screen reader."""
+    announce(success_text)

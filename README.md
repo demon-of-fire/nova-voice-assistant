@@ -12,9 +12,9 @@ A Windows voice assistant powered by Google Gemini with full PC control and NVDA
 - **Quick Search** — Answers questions, scores, weather by searching in the background (no browser opens)
 - **NVDA Accessible** — Every UI element is screen reader compatible. Built for blind and low-vision users
 - **Dark/Light Mode** — Fully themed UI with toggle in settings
-- **Neural TTS** — Natural-sounding Microsoft Edge neural voices (not robotic SAPI5)
+- **Native TTS** — Uses installed Windows voices through SAPI, with no extra speech player
 - **Floating Orb** — Minimizes to a small orb like Siri. Click to start listening. Customizable position
-- **Ollama Support** — Use local AI models for free, private conversations
+- **Windows Integration** — Desktop shortcut, optional start-with-Windows, tray behavior, global hotkeys
 - **System Tray** — Runs quietly in the background
 
 ## Keyboard Shortcuts
@@ -24,10 +24,9 @@ A Windows voice assistant powered by Google Gemini with full PC control and NVDA
 | Ctrl+Shift+T | Start/stop talking |
 | Ctrl+Shift+M | Mute/unmute |
 | Ctrl+Shift+Y | Type a message |
+| Ctrl+Shift+S | Toggle screen sharing |
+| Ctrl+Shift+, | Open settings |
 | Ctrl+Shift+Q | Quit Nova |
-| F2 | Talk (in Nova window) |
-| F3 | Mute (in Nova window) |
-| F4 | Settings (in Nova window) |
 | Escape | Minimize to tray |
 
 ## Wake Word
@@ -38,25 +37,35 @@ Say **"Hey Nova"** to activate hands-free.
 
 ### Requirements
 - Windows 10/11
-- Python 3.10+
 - A Gemini API key (free at [aistudio.google.com/apikey](https://aistudio.google.com/apikey))
 - Microphone
 
 ### Install
 
+Download `Nova Setup.exe` from the GitHub release and open it.
+
+On first run, Nova copies the bundled app to `%LOCALAPPDATA%\Nova\Nova.exe`,
+creates Desktop and Start Menu shortcuts, registers a Startup shortcut, and
+opens from the installed copy. The Startup shortcut launches Nova in background
+mode so Ctrl+Shift+T and Ctrl+Shift+Y are registered automatically when Windows
+starts, even when the main window is hidden. Nova will then ask for your Gemini
+API key.
+
+Nova also registers per-user shell integration: `nova://` links for launchers
+and scripts, a Win+R `Nova.exe` app path alias, and a Settings button that can
+repair all native integration after an update or moved build. The shared
+integration API lives in `assistant/platform_integration.py`, with Windows in
+`assistant/windows_integration.py` and Linux-ready `.desktop`/autostart hooks
+stubbed for future ports.
+
+For development from source:
+
 ```bash
-# Clone the repo
 git clone https://github.com/demon-of-fire/nova-voice-assistant.git
 cd nova-voice-assistant
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Run
 python main.py
 ```
-
-On first launch, Nova will ask for your Gemini API key.
 
 ### Build Standalone EXE
 
@@ -64,14 +73,16 @@ On first launch, Nova will ask for your Gemini API key.
 python build.py
 ```
 
-Creates `Nova.exe` in the project folder — no Python needed to run it.
+Creates `Nova Setup.exe` in the project folder. Upload that file for releases;
+users only need to open it once.
 
 ## Settings
 
-Open Settings (F4) to configure:
-- **AI Model** — Gemini 2.5 Flash (default), 2.5 Pro, 3.0 Preview, or Ollama models
+Open Settings from Nova or press Ctrl+Shift+, to configure:
+- **Windows** — Create/repair desktop and Start Menu shortcuts, start with Windows, start minimized, wake word
+- **AI Model** — Gemini 2.5 Flash (default), 2.5 Pro, or Flash Lite
 - **Permissions** — Toggle what Nova can do (typing, app control, shell commands, etc.)
-- **Voice** — 15 neural voices to choose from
+- **Voice** — Installed Windows voices to choose from
 - **Speech Speed** — Adjustable WPM
 - **STT Engine** — Google (online), Sphinx (offline), or Whisper (offline)
 - **Follow-Up Mode** — Keep conversation going after each response
@@ -86,9 +97,9 @@ main.py              — Entry point, API key dialog
 config.py            — All constants and system prompt
 assistant/
   core.py            — Orchestrator (listen -> think -> speak loop)
-  brain.py           — Gemini + Ollama AI routing
+  brain.py           — Gemini function-calling brain
   listener.py        — Speech recognition + wake word detection
-  speaker.py         — Edge TTS neural voices + pyttsx3 fallback
+  speaker.py         — Native Windows SAPI speech
   ui.py              — Tkinter UI (NVDA accessible)
   settings.py        — Persistent settings with API key obfuscation
   accessibility.py   — NVDA announcement helpers

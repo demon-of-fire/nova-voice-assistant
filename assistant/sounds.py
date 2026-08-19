@@ -1,61 +1,38 @@
-"""Sound effects player using pygame.mixer.
-
-Loads WAV files from the 'sounds' directory. If WAV not found,
-falls back to MP3. Supports both bundled (PyInstaller) and dev mode.
-"""
+"""Tiny Windows sound-effect player using the standard library."""
 
 import os
 import sys
 import threading
 import time
+import winsound
 
-os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
-import pygame
-try:
-    pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
-except Exception:
-    # No audio device (RDP, headless, broken drivers) — run silently instead of crashing at import
-    pass
 
-# Find sounds directory
 if getattr(sys, "frozen", False):
     _base = sys._MEIPASS
 else:
     _base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 SOUNDS_DIR = os.path.join(_base, "sounds")
+_ambient = None
 
-# Preload
-_sounds = {}
-_NAMES = ["activate", "deactivate", "listening", "thinking", "mute", "unmute", "error", "not_understood"]
 
-for name in _NAMES:
-    # Prefer WAV, fall back to MP3
-    for ext in (".wav", ".mp3"):
-        path = os.path.join(SOUNDS_DIR, f"{name}{ext}")
-        if os.path.exists(path):
-            try:
-                _sounds[name] = pygame.mixer.Sound(path)
-                break
-            except Exception:
-                pass
-
-_channel = pygame.mixer.Channel(0)
-_bg_channel = pygame.mixer.Channel(1)
+def _path(name):
+    path = os.path.join(SOUNDS_DIR, f"{name}.wav")
+    return path if os.path.exists(path) else None
 
 
 def play(name):
-    """Play a sound (non-blocking)."""
-    sound = _sounds.get(name)
-    if not sound:
+    """Play a sound without blocking."""
+    path = _path(name)
+    if not path:
         return
 
     def _do():
+        flags = winsound.SND_FILENAME | winsound.SND_ASYNC
+        if name == "listening":
+            flags |= winsound.SND_LOOP
         try:
-            if name == "listening":
-                _bg_channel.play(sound)
-            else:
-                _channel.play(sound)
+            winsound.PlaySound(path, flags)
         except Exception:
             pass
 
@@ -63,21 +40,19 @@ def play(name):
 
 
 def play_sync(name):
-    """Play a sound and block until done."""
-    sound = _sounds.get(name)
-    if not sound:
+    """Play a sound and wait briefly for it to finish."""
+    path = _path(name)
+    if not path:
         return
     try:
-        _channel.play(sound)
-        while _channel.get_busy():
-            time.sleep(0.05)
+        winsound.PlaySound(path, winsound.SND_FILENAME)
     except Exception:
-        pass
+        time.sleep(0.15)
 
 
 def stop_ambient():
-    """Stop the listening ambient sound."""
+    """Stop any async/looped sound."""
     try:
-        _bg_channel.stop()
+        winsound.PlaySound(None, winsound.SND_PURGE)
     except Exception:
         pass

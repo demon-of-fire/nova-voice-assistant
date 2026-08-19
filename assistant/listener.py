@@ -100,6 +100,8 @@ class Listener:
 
     def start(self):
         """Start continuous background listening for the wake word."""
+        if self._running and self._thread and self._thread.is_alive():
+            return
         self._running = True
         self._startup_time = __import__("time").time()
         self._thread = threading.Thread(target=self._listen_loop, daemon=True)

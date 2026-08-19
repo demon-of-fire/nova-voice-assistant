@@ -1,40 +1,19 @@
-"""AI brain — Gemini for actions, Ollama for free conversation.
+"""AI brain — Gemini only, kept intentionally lightweight.
 
 Gemini (cloud, needs API key):
   - Function calling for PC control
   - Smart action routing
-  - Costs money per request
-
-Ollama (local, free):
-  - Conversational chat
-  - No function calling (can't control PC)
-  - Runs entirely on your machine
-  - Requires Ollama installed: https://ollama.com
-
-The brain auto-picks: if user wants an action → Gemini.
-If just chatting → Ollama (if available), else Gemini.
 """
 
-import json
 import logging
 import os
-import urllib.request
-import urllib.error
 from datetime import datetime
 import config
 import actions
 
-# Log to file so errors are never invisible
-_log_path = os.path.join(os.path.expanduser("~"), "nova_error.log")
-logging.basicConfig(
-    filename=_log_path,
-    level=logging.WARNING,
-    format="%(asctime)s %(levelname)s %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
 log = logging.getLogger("nova")
 
-# Lazy imports for Gemini (may not be needed if Ollama-only)
+# Lazy imports keep startup small until an API key is available.
 _genai = None
 _types = None
 
@@ -67,6 +46,8 @@ ACTION_PERMISSIONS = {
     "restart_pc": "allow_system_control",
     "lock_pc": "allow_system_control",
     "cancel_shutdown": "allow_system_control",
+    "get_time": "allow_system_control",
+    "get_date": "allow_system_control",
     "search_web": "allow_web_search",
     "quick_search": "allow_web_search",
     "open_url": "allow_web_search",
@@ -113,73 +94,106 @@ ACTION_PERMISSIONS = {
     "drag_to": "allow_screen_control",
     "get_screen_size": "allow_screen_control",
     "get_mouse_position": "allow_screen_control",
+    # Utility
+    "calculate": "allow_system_control",
+    "create_timer": "allow_system_control",
+    "take_note": "allow_file_write",
+    "list_notes": "allow_file_access",
+    "read_note": "allow_file_access",
+    "convert_units": "allow_system_control",
+    "lookup_word": "allow_web_search",
+    "get_word_of_the_day": "allow_web_search",
+    # Internet
+    "get_weather": "allow_web_search",
+    "get_news": "allow_web_search",
+    "get_stock_price": "allow_web_search",
+    "get_currency_rate": "allow_web_search",
+    "translate_text": "allow_web_search",
+    "check_website": "allow_network",
+    "get_public_ip_info": "allow_network",
+    "shorten_url": "allow_web_search",
+    # Automation
+    "start_pomodoro": "allow_system_control",
+    "keep_awake": "allow_system_control",
+    "stop_keeping_awake": "allow_system_control",
+    "save_window_layout": "allow_system_control",
+    "restore_window_layout": "allow_system_control",
+    "list_layouts": "allow_file_access",
+    "get_battery_report": "allow_system_control",
+    # Text tools
+    "transform_text": "allow_typing",
+    "count_words": "allow_typing",
+    "format_json": "allow_system_control",
+    "minify_json": "allow_system_control",
+    "convert_base": "allow_system_control",
+    "extract_emails": "allow_system_control",
+    "extract_urls": "allow_system_control",
+    "compare_texts": "allow_system_control",
+    # System tools
+    "delete_note": "allow_file_delete",
+    "set_power_plan": "allow_system_control",
+    "get_power_plan": "allow_system_control",
+    "get_storage_usage": "allow_system_control",
+    "list_drives": "allow_system_control",
+    "empty_recycle_bin": "allow_file_delete",
+    "manage_startup_app": "allow_system_control",
+    "create_restore_point": "allow_system_control",
+    "disk_cleanup": "allow_system_control",
+    "get_system_uptime": "allow_system_control",
+    # More utility
+    "generate_password": "allow_typing",
+    "generate_uuid": "allow_system_control",
+    "roll_dice": "allow_system_control",
+    "flip_coin": "allow_system_control",
+    "pick_random": "allow_system_control",
+    "create_shopping_list": "allow_file_write",
+    "add_to_shopping_list": "allow_file_write",
+    "remove_from_shopping_list": "allow_file_write",
+    "show_shopping_list": "allow_file_access",
+    "set_reminder": "allow_system_control",
+    "start_stopwatch": "allow_system_control",
+    "stop_stopwatch": "allow_system_control",
+    "lap_stopwatch": "allow_system_control",
+    # More system
+    "list_services": "allow_system_control",
+    "restart_service": "allow_system_control",
+    "start_service": "allow_system_control",
+    "stop_service": "allow_system_control",
+    "get_audio_devices": "allow_system_control",
+    "get_display_info": "allow_system_control",
+    "get_env_var": "allow_system_control",
+    "list_env_vars": "allow_system_control",
+    "list_startup_programs": "allow_system_control",
+    # More internet
+    "get_random_fact": "allow_web_search",
+    "get_joke": "allow_web_search",
+    "get_random_quote": "allow_web_search",
+    "get_timezone_info": "allow_web_search",
+    "define_slang": "allow_web_search",
+    "generate_qr_code": "allow_web_search",
+    # More text
+    "strip_markdown": "allow_typing",
+    "caesar_cipher": "allow_typing",
+    "generate_lorem_ipsum": "allow_typing",
+    "check_palindrome": "allow_typing",
+    "check_anagram": "allow_typing",
+    "text_statistics": "allow_typing",
+    # More automation
+    "delayed_screenshot": "allow_screen_control",
+    "set_window_transparency": "allow_system_control",
+    "get_clipboard_history": "allow_typing",
+    "clear_clipboard_history": "allow_typing",
+    "batch_rename": "allow_file_write",
+    "organize_downloads": "allow_file_write",
+    # More media
+    "get_now_playing": "allow_system_control",
+    "set_app_volume": "allow_system_control",
+    "take_region_screenshot": "allow_screen_control",
+    "pick_color": "allow_system_control",
+    "toggle_magnifier": "allow_system_control",
+    "set_magnifier_zoom": "allow_system_control",
     # quit_assistant has no permission gate — always allowed
 }
-
-
-class OllamaChat:
-    """Free local conversation via Ollama."""
-
-    def __init__(self, model="llama3.2", base_url="http://localhost:11434"):
-        self.model = model
-        self.base_url = base_url
-        self.history = []
-        self.available = self._check()
-
-    def _check(self):
-        """Check if Ollama is running."""
-        try:
-            req = urllib.request.Request(f"{self.base_url}/api/tags")
-            resp = urllib.request.urlopen(req, timeout=2)
-            data = json.loads(resp.read())
-            models = [m["name"] for m in data.get("models", [])]
-            if models:
-                # Use first available model if our preferred one isn't there
-                if not any(self.model in m for m in models):
-                    self.model = models[0].split(":")[0]
-                return True
-            return False
-        except Exception:
-            return False
-
-    def chat(self, user_text):
-        """Send message to Ollama and get response."""
-        now = datetime.now().strftime("%I:%M %p")
-        self.history.append({"role": "user", "content": f"[{now}] {user_text}"})
-
-        if len(self.history) > 200:
-            self.history = self.history[-200:]
-
-        payload = json.dumps({
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": (
-                    f"You are {config.ASSISTANT_NAME}, a friendly voice assistant. "
-                    "Keep responses SHORT (1-3 sentences) since they're spoken aloud. "
-                    "Be natural, witty, and conversational. No markdown or emojis. "
-                    "You're having a casual voice conversation."
-                )},
-                *self.history,
-            ],
-            "stream": False,
-            "options": {"num_predict": 150},
-        }).encode()
-
-        try:
-            req = urllib.request.Request(
-                f"{self.base_url}/api/chat",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-            )
-            resp = urllib.request.urlopen(req, timeout=30)
-            data = json.loads(resp.read())
-            reply = data["message"]["content"].strip()
-            self.history.append({"role": "assistant", "content": reply})
-            return reply
-        except urllib.error.URLError:
-            return "Ollama doesn't seem to be running. Start it with 'ollama serve' in a terminal."
-        except Exception as e:
-            return f"Sorry, had trouble talking to Ollama: {e}"
 
 
 class Brain:
@@ -205,42 +219,18 @@ class Brain:
             except Exception as e:
                 log.error("Gemini init failed: %s", e)
 
-        ollama_model = settings.get("ollama_model") or "llama3.2"
-        self.ollama = OllamaChat(model=ollama_model)
-
         self.model = settings.get("gemini_model") or "gemini-2.5-flash"
-        log.info("Brain init: model=%s, gemini=%s, ollama=%s",
-                 self.model, self.has_gemini, self.has_ollama)
+        log.info("Brain init: model=%s, gemini=%s", self.model, self.has_gemini)
 
     @property
     def has_gemini(self):
         return self.gemini_client is not None
 
-    @property
-    def has_ollama(self):
-        return self.ollama.available
-
     def process(self, user_text):
-        """Route to Gemini (actions) or Ollama (chat)."""
-        mode = self.settings.get("ai_mode") or "auto"
-
-        if mode == "ollama_only":
-            if self.has_ollama:
-                return self.ollama.chat(user_text)
-            return "Ollama is not running. Start it or switch to Gemini mode."
-
-        if mode == "gemini_only":
-            if self.has_gemini:
-                return self._gemini_process(user_text)
-            return "Gemini API key not set. Add it in Settings."
-
-        # Auto mode: use Gemini for actions, Ollama for chat
+        """Send every request through the single configured Gemini backend."""
         if self.has_gemini:
             return self._gemini_process(user_text)
-        elif self.has_ollama:
-            return self.ollama.chat(user_text)
-        else:
-            return "No AI backend available. Set a Gemini API key or install Ollama."
+        return "Gemini API key not set. Add it in Settings."
 
     def _gemini_process(self, user_text):
         """Full Gemini processing with function calling."""
@@ -294,15 +284,10 @@ class Brain:
                 return f"That model is no longer available. I've switched to {self.model}. Please try again."
             if "quota" in err_msg or "429" in err_msg or "rate" in err_msg:
                 return "API rate limit hit. Wait a moment and try again."
-            # Fallback to Ollama if available
-            if self.has_ollama:
-                return self.ollama.chat(user_text)
             return f"Sorry, Gemini error: {str(e)[:100]}"
 
         if not response.candidates:
             log.error("Gemini returned empty candidates")
-            if self.has_ollama:
-                return self.ollama.chat(user_text)
             return "I didn't get a response. Please try again."
 
         candidate = response.candidates[0]
@@ -330,13 +315,11 @@ class Brain:
             return f"Blocked: '{perm_label}' is disabled in Settings.", False
 
         # Check if action needs confirmation
-        from actions.confirmation import needs_confirmation, ask_confirmation, suppress_next
+        from actions.confirmation import needs_confirmation, ask_confirmation
         if needs_confirmation(fn_name):
             desc = f"{fn_name}({', '.join(f'{k}={v!r}' for k, v in fn_args.items())})"
             if not ask_confirmation(f"Nova wants to: {desc}"):
                 return "Cancelled by user.", True
-            # Skip the handler's own confirmation — we already asked
-            suppress_next()
 
         result = actions.execute(fn_name, fn_args)
         log.info("Action %s(%s) -> %s", fn_name, fn_args, result[:100] if result else "None")
@@ -458,4 +441,3 @@ class Brain:
 
     def clear_history(self):
         self.gemini_history = []
-        self.ollama.history = []
